@@ -5,7 +5,7 @@ import '@testing-library/jest-dom';
 import axios from 'axios';
 
 import App, { today, getWeekDates, computeWeeklyVolume, computeWeeklyRecords } from './App';
-import type { WorkoutData } from './App';
+import type { WorkoutData, AllTimeRecord } from './App';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -39,6 +39,7 @@ function setupDefaultMocks() {
     if (url.includes('/exercises')) return Promise.resolve({ data: EXERCISES_RESPONSE });
     if (/\/workouts\/\d{4}-\d{2}-\d{2}/.test(url)) return Promise.resolve({ data: EMPTY_WORKOUT });
     if (url.includes('/workouts')) return Promise.resolve({ data: { dates: [] } });
+    if (url.includes('/records')) return Promise.resolve({ data: { records: [] } });
     return Promise.reject(new Error(`Unexpected GET: ${url}`));
   });
   mockedAxios.post.mockResolvedValue({ data: { message: 'Workout logged successfully' } });
@@ -348,6 +349,76 @@ describe('App — analytics panel', () => {
     await renderApp();
     await waitFor(() => {
       expect(screen.queryByText('Week summary')).not.toBeInTheDocument();
+    });
+  });
+});
+
+// ── Personal records panel tests ──────────────────────────────────────────────
+
+const RECORDS_RESPONSE: { records: { exercise_id: string; max_reps: number; max_weight: number | null }[] } = {
+  records: [
+    { exercise_id: 'pushups', max_reps: 20, max_weight: null },
+    { exercise_id: 'bicep_curls', max_reps: 12, max_weight: 15.0 },
+  ],
+};
+
+function setupRecordsMocks() {
+  mockedAxios.get.mockImplementation((url: string) => {
+    if (url.includes('/users')) return Promise.resolve({ data: USERS_RESPONSE });
+    if (url.includes('/exercises')) return Promise.resolve({ data: EXERCISES_RESPONSE });
+    if (/\/workouts\/\d{4}-\d{2}-\d{2}/.test(url)) return Promise.resolve({ data: EMPTY_WORKOUT });
+    if (url.includes('/workouts')) return Promise.resolve({ data: { dates: [] } });
+    if (url.includes('/records')) return Promise.resolve({ data: RECORDS_RESPONSE });
+    return Promise.reject(new Error(`Unexpected GET: ${url}`));
+  });
+}
+
+describe('App — personal records panel', () => {
+  it('renders the records panel when records exist', async () => {
+    setupRecordsMocks();
+    await renderApp();
+    await waitFor(() => {
+      expect(screen.getByText('Personal records')).toBeInTheDocument();
+    });
+  });
+
+  it('hides the records panel when no records exist', async () => {
+    await renderApp();
+    await waitFor(() => {
+      expect(screen.queryByText('Personal records')).not.toBeInTheDocument();
+    });
+  });
+
+  it('displays max reps for each exercise', async () => {
+    setupRecordsMocks();
+    await renderApp();
+    await waitFor(() => {
+      expect(screen.getByText('20 reps')).toBeInTheDocument();
+      expect(screen.getByText('12 reps')).toBeInTheDocument();
+    });
+  });
+
+  it('displays max weight when present', async () => {
+    setupRecordsMocks();
+    await renderApp();
+    await waitFor(() => {
+      expect(screen.getByText('max 15')).toBeInTheDocument();
+    });
+  });
+
+  it('fetches records again after logging a workout', async () => {
+    setupRecordsMocks();
+    mockedAxios.post.mockResolvedValue({ data: { message: 'Workout logged successfully' } });
+    await renderApp();
+
+    await userEvent.selectOptions(screen.getByLabelText('Exercise:'), 'pushups');
+    await userEvent.type(screen.getByLabelText('Reps:'), '10');
+    await userEvent.click(screen.getByRole('button', { name: 'Add Set' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Log Workout' }));
+
+    await waitFor(() => {
+      const recordsCalls = mockedAxios.get.mock.calls.filter(([url]) => url.includes('/records'));
+      expect(recordsCalls.length).toBeGreaterThanOrEqual(2);
     });
   });
 });

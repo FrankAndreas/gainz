@@ -310,3 +310,16 @@ body {
 .day-heading {
   margin-top: 4px;
 }
+
+.records-panel {
+  margin-top: 0;
+}
+
+.analytics-stat--record {
+  color: #e67e22;
+}
+
+.analytics-sub--record {
+  color: #e67e22;
+  font-weight: 600;
+}

@@ -219,6 +219,40 @@ async def list_workout_dates(
     return {"dates": dates}
 
 
+@app.get("/records")
+async def get_records(user_id: str = Query(...)) -> dict:
+    _safe_user_id(user_id)
+
+    workout_dir = DATA_DIR / "workouts" / user_id
+    if not workout_dir.exists():
+        return {"records": []}
+
+    records: dict[str, dict] = {}  # exercise_id -> {max_reps, max_weight}
+
+    try:
+        for entry in sorted(workout_dir.iterdir()):
+            if not _DATE_RE.fullmatch(entry.stem):
+                continue
+            day = _read_json(entry)
+            for exercise in day.get("exercises", []):
+                ex_id = exercise["exercise_id"]
+                rec = records.setdefault(ex_id, {"max_reps": 0, "max_weight": None})
+                for s in exercise.get("sets", []):
+                    rec["max_reps"] = max(rec["max_reps"], s.get("reps", 0))
+                    w = s.get("weight")
+                    if w is not None:
+                        rec["max_weight"] = max(rec["max_weight"] or 0, w)
+    except OSError:
+        raise HTTPException(status_code=500, detail="Could not read workout records")
+
+    return {
+        "records": [
+            {"exercise_id": ex_id, "max_reps": r["max_reps"], "max_weight": r["max_weight"]}
+            for ex_id, r in records.items()
+        ]
+    }
+
+
 @app.get("/workouts/{date}")
 async def get_workout(date: str, user_id: str = Query(...)):
     _safe_date(date)

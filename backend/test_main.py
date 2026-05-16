@@ -180,6 +180,66 @@ class TestListWorkoutDates:
         assert r.status_code == 500
 
 
+class TestGetRecords:
+    def test_no_workouts_returns_empty(self):
+        r = client.get("/records", params={"user_id": "user1"})
+        assert r.status_code == 200
+        assert r.json() == {"records": []}
+
+    def test_returns_max_reps_across_all_days(self):
+        for date, reps in [("2026-01-10", 8), ("2026-01-11", 15), ("2026-01-12", 10)]:
+            client.post("/workouts", json={
+                "exercise_id": "pushups", "sets": [{"reps": reps}],
+                "date": date, "user_id": "user1",
+            })
+        r = client.get("/records", params={"user_id": "user1"})
+        assert r.status_code == 200
+        rec = next(x for x in r.json()["records"] if x["exercise_id"] == "pushups")
+        assert rec["max_reps"] == 15
+
+    def test_returns_max_weight_across_all_days(self):
+        for date, weight in [("2026-01-10", 10.0), ("2026-01-11", 20.0), ("2026-01-12", 15.0)]:
+            client.post("/workouts", json={
+                "exercise_id": "bicep_curls", "sets": [{"reps": 10, "weight": weight}],
+                "date": date, "user_id": "user1",
+            })
+        r = client.get("/records", params={"user_id": "user1"})
+        rec = next(x for x in r.json()["records"] if x["exercise_id"] == "bicep_curls")
+        assert rec["max_weight"] == 20.0
+
+    def test_max_weight_null_for_bodyweight_exercise(self):
+        client.post("/workouts", json={
+            "exercise_id": "pushups", "sets": [{"reps": 10}],
+            "date": "2026-01-10", "user_id": "user1",
+        })
+        r = client.get("/records", params={"user_id": "user1"})
+        rec = next(x for x in r.json()["records"] if x["exercise_id"] == "pushups")
+        assert rec["max_weight"] is None
+
+    def test_multiple_exercises_returned(self):
+        for ex in ("pushups", "squats"):
+            client.post("/workouts", json={
+                "exercise_id": ex, "sets": [{"reps": 10}],
+                "date": "2026-01-10", "user_id": "user1",
+            })
+        r = client.get("/records", params={"user_id": "user1"})
+        exercise_ids = {x["exercise_id"] for x in r.json()["records"]}
+        assert {"pushups", "squats"} == exercise_ids
+
+    def test_invalid_user_id_rejected(self):
+        r = client.get("/records", params={"user_id": "../evil"})
+        assert r.status_code == 400
+
+    def test_io_error_returns_500(self):
+        client.post("/workouts", json={
+            "exercise_id": "pushups", "sets": [{"reps": 10}],
+            "date": "2026-01-10", "user_id": "user1",
+        })
+        with patch("backend.main._read_json", side_effect=OSError("disk full")):
+            r = client.get("/records", params={"user_id": "user1"})
+        assert r.status_code == 500
+
+
 class TestErrorHandling:
     """OSError paths — simulated disk failures."""
 

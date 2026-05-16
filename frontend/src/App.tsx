@@ -20,6 +20,12 @@ export function getWeekDates(offset: number): string[] {
   });
 }
 
+export interface AllTimeRecord {
+  exerciseId: string;
+  maxReps: number;
+  maxWeight: number | null;
+}
+
 export interface ExerciseVolume {
   exerciseId: string;
   totalReps: number;
@@ -118,6 +124,7 @@ const App: React.FC = () => {
 
   // Analytics
   const [weekWorkouts, setWeekWorkouts] = useState<WorkoutData[]>([]);
+  const [allTimeRecords, setAllTimeRecords] = useState<AllTimeRecord[]>([]);
 
   useEffect(() => { loadInitialData(); }, []);
 
@@ -127,6 +134,11 @@ const App: React.FC = () => {
     fetchWeekActiveDates(currentUserId, dates);
     fetchWeekWorkouts(currentUserId, dates);
   }, [currentUserId, weekOffset]);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    fetchAllTimeRecords(currentUserId);
+  }, [currentUserId]);
 
   useEffect(() => {
     if (!currentUserId) return;
@@ -175,6 +187,19 @@ const App: React.FC = () => {
     } catch { /* non-critical */ }
   };
 
+  const fetchAllTimeRecords = async (userId: string) => {
+    try {
+      const res = await axios.get(`${API_URL}/records`, { params: { user_id: userId } });
+      setAllTimeRecords(
+        res.data.records.map((r: { exercise_id: string; max_reps: number; max_weight: number | null }) => ({
+          exerciseId: r.exercise_id,
+          maxReps: r.max_reps,
+          maxWeight: r.max_weight,
+        }))
+      );
+    } catch { /* non-critical */ }
+  };
+
   const fetchDayWorkout = async (userId: string, date: string) => {
     try {
       const res = await axios.get(`${API_URL}/workouts/${date}`, { params: { user_id: userId } });
@@ -215,6 +240,7 @@ const App: React.FC = () => {
       fetchWeekActiveDates(currentUserId, weekDates);
       fetchWeekWorkouts(currentUserId, weekDates);
       fetchDayWorkout(currentUserId, selectedDate);
+      fetchAllTimeRecords(currentUserId);
     } catch {
       showMessage('Error logging workout', true);
     } finally {
@@ -338,6 +364,34 @@ const App: React.FC = () => {
                     <div className="analytics-sub">{v.totalSets} {v.totalSets === 1 ? 'set' : 'sets'}</div>
                     {rec?.maxWeight !== null && rec?.maxWeight !== undefined && (
                       <div className="analytics-sub">max {rec.maxWeight}</div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* All-time personal records */}
+        {allTimeRecords.length > 0 && (
+          <div className="analytics records-panel">
+            <h3 className="analytics-heading">Personal records</h3>
+            <div className="analytics-grid">
+              {allTimeRecords.map(rec => {
+                const weekRec = weeklyRecords.find(r => r.exerciseId === rec.exerciseId);
+                const newRepsRecord = weekRec !== undefined && weekRec.maxReps >= rec.maxReps;
+                const newWeightRecord = rec.maxWeight !== null && weekRec?.maxWeight !== undefined &&
+                  weekRec.maxWeight !== null && weekRec.maxWeight >= rec.maxWeight;
+                return (
+                  <div key={rec.exerciseId} className="analytics-card">
+                    <div className="analytics-name">{getExerciseName(rec.exerciseId)}</div>
+                    <div className={`analytics-stat${newRepsRecord ? ' analytics-stat--record' : ''}`}>
+                      {rec.maxReps} reps
+                    </div>
+                    {rec.maxWeight !== null && (
+                      <div className={`analytics-sub${newWeightRecord ? ' analytics-sub--record' : ''}`}>
+                        max {rec.maxWeight}
+                      </div>
                     )}
                   </div>
                 );
