@@ -1,21 +1,21 @@
 # Fitness Tracker
 
-A simple home fitness tracking application with Python backend and React frontend, designed to run in a dev container.
+A home fitness tracking application with a Python/FastAPI backend and React/TypeScript frontend, designed to run in a VS Code dev container.
 
 ## Features
 
-- **Multi-user support** without authentication (perfect for family use)
-- **Exercise logging** for bodyweight and dumbbell exercises
+- **Multi-user support** without authentication (family-friendly)
+- **Multi-set logging** — add as many sets as you need before submitting
+- **Week history browser** — navigate by week, see which days have workouts
 - **File-based storage** using JSON files (no database required)
-- **Dev container setup** to avoid messing with your host system
-- **Real-time workout logging** with sets, reps, and weights
+- **Dev container setup** to avoid touching your host system
 
 ## Quick Start
 
 ### Prerequisites
 
 - [Docker](https://www.docker.com/get-started)
-- [VS Code](https://code.visualstudio.com/) with [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
+- [VS Code](https://code.visualstudio.com/) with the [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
 
 ### Running the Application
 
@@ -27,118 +27,155 @@ A simple home fitness tracking application with Python backend and React fronten
    ```
 
 3. **Reopen in Dev Container**
-   - When prompted, click "Reopen in Container"
-   - Or use Command Palette: `Dev Containers: Reopen in Container`
+   - When prompted click "Reopen in Container", or
+   - Command Palette → `Dev Containers: Reopen in Container`
 
-4. **The application will start automatically**
-   - Backend: http://localhost:8000
-   - Frontend: http://localhost:3000
+4. **Start the servers** (inside the container terminal)
+   ```bash
+   # Backend
+   uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+
+   # Frontend (separate terminal)
+   cd frontend && npm start
+   ```
+   - Backend API: http://localhost:8000
+   - Frontend:    http://localhost:3000
 
 ## Usage
 
-### Basic Workflow
+### Logging a workout
 
-1. **Select User**: Choose a family member from the dropdown
-2. **Log Exercise**:
-   - Select an exercise (push-ups, squats, bicep curls, etc.)
-   - Enter number of reps
-   - Add weight if using dumbbells (optional)
-   - Click "Log Workout"
+1. Select a user from the dropdown
+2. Choose an exercise
+3. Enter reps (and optional weight), click **Add Set** — repeat for each set
+4. Click **Log Workout** to save
 
-### Available Exercises
+### Browsing history
 
-**Bodyweight Exercises:**
-- Push-ups
-- Squats
-- Planks
+- The week strip below the form shows Mon–Sun of the current week
+- A blue dot marks days that have logged workouts
+- Click any day pill to see its exercises and sets
+- Use **←** / **→** to step between weeks
 
-**Dumbbell Exercises:**
-- Bicep Curls
-- Shoulder Press
+### Available exercises
+
+**Bodyweight:** Push-ups · Squats · Planks
+
+**Dumbbell:** Bicep Curls · Shoulder Press
+
+To add more exercises edit `data/exercises.json` (created on first run):
+
+```json
+{
+  "bodyweight": [
+    {
+      "id": "pullups",
+      "name": "Pull-ups",
+      "category": "bodyweight",
+      "muscle_groups": ["back", "biceps"]
+    }
+  ]
+}
+```
 
 ## Project Structure
 
 ```
 fitness-tracker/
 ├── .devcontainer/          # Dev container configuration
-├── backend/               # Python FastAPI backend
-│   ├── main.py           # Main API application
-│   └── requirements.txt  # Python dependencies
-├── frontend/             # React TypeScript frontend
+├── backend/
+│   ├── main.py             # FastAPI application
+│   ├── requirements.txt    # Python dependencies
+│   └── test_main.py        # pytest test suite (97 % coverage)
+├── frontend/
 │   ├── public/
 │   ├── src/
+│   │   ├── App.tsx         # Main React component
+│   │   ├── App.test.tsx    # React Testing Library tests
+│   │   └── index.css       # Styles
 │   └── package.json
-├── data/                 # JSON data files (created automatically)
-├── docker-compose.yml    # Multi-service setup
+├── docker-compose.yml
 └── README.md
 ```
 
 ## Data Storage
 
-All data is stored as JSON files in the `data/` directory:
+All data lives in `data/` (created automatically, excluded from git):
 
-- `users.json` - User information and current user selection
-- `exercises.json` - Available exercises and categories
-- `workouts/{user_id}/` - Individual workout logs per user
+| File | Contents |
+|---|---|
+| `users.json` | User list |
+| `exercises.json` | Exercise catalogue |
+| `workouts/{user_id}/{date}.json` | One file per user per day |
 
-## Development
+## API Reference
 
-### Backend (Python/FastAPI)
+All endpoints return JSON. Validation errors return HTTP 400 or 422; server errors return 500.
 
-The backend provides REST API endpoints:
-- `GET /users` - Get all users
-- `POST /users/switch/{user_id}` - Switch current user
-- `GET /exercises` - Get available exercises
-- `POST /workouts` - Log a workout
-- `GET /workouts/{date}` - Get workouts for a specific date
+### `GET /users`
+Returns the user list.
+```json
+{ "users": [{ "id": "user1", "name": "Andreas", "created": "…" }] }
+```
 
-### Frontend (React/TypeScript)
+### `GET /exercises`
+Returns exercises grouped by category.
+```json
+{ "bodyweight": [{ "id": "pushups", "name": "Push-ups", … }], "dumbbell": […] }
+```
 
-Built with React and TypeScript, featuring:
-- User selection dropdown
-- Exercise logging form
-- Real-time feedback
-- Responsive design
-
-## Adding New Exercises
-
-To add new exercises, edit the `data/exercises.json` file:
-
+### `POST /workouts`
+Log a workout. All fields are required.
 ```json
 {
-  "bodyweight": [
-    {
-      "id": "new_exercise",
-      "name": "New Exercise",
-      "category": "bodyweight",
-      "muscle_groups": ["target_muscle"]
-    }
+  "user_id": "user1",
+  "date": "2026-05-16",
+  "exercise_id": "pushups",
+  "sets": [{ "reps": 10 }, { "reps": 8, "weight": 5.0 }]
+}
+```
+`date` must be `YYYY-MM-DD`. `user_id` must be alphanumeric (plus `_` and `-`).
+
+### `GET /workouts/{date}?user_id=`
+Returns all logged exercises for a user on a given date.
+```json
+{
+  "date": "2026-05-16",
+  "exercises": [
+    { "exercise_id": "pushups", "sets": [{ "reps": 10 }], "timestamp": "…" }
   ]
 }
 ```
 
+### `GET /workouts?user_id=&date_from=&date_to=`
+Returns dates within the range that have at least one logged workout.
+```json
+{ "dates": ["2026-05-13", "2026-05-16"] }
+```
+
+## Development
+
+### Running tests
+
+```bash
+# Backend (from repo root)
+python -m pytest backend/test_main.py --cov=backend.main -v
+
+# Frontend
+cd frontend && npm test -- --watchAll=false
+```
+
+### Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `REACT_APP_API_URL` | `http://localhost:8000` | Backend URL used by the frontend |
+| `ALLOWED_ORIGIN` | `http://localhost:3000` | CORS origin allowed by the backend |
+
 ## Troubleshooting
 
-### Backend Not Starting
-- Check if port 8000 is available
-- Ensure Python dependencies are installed
+**Backend not starting** — check port 8000 is free; run `pip install -r backend/requirements.txt` inside the container.
 
-### Frontend Not Loading
-- Check if port 3000 is available
-- Verify backend is running on port 8000
+**Frontend not loading** — check port 3000 is free; run `npm install` inside `frontend/`.
 
-### Data Not Saving
-- Check file permissions in the `data/` directory
-- Ensure the dev container has write access
-
-## Future Enhancements
-
-- Progress charts and analytics
-- Workout templates and routines
-- Exercise instructions and videos
-- Data export/import functionality
-- Mobile-responsive improvements
-
-## Contributing
-
-This is a home project, but feel free to suggest improvements or add features based on your fitness tracking needs!
+**Data not saving** — check write permissions on the `data/` directory.
