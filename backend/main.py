@@ -36,6 +36,10 @@ def _safe_user_id(user_id: str) -> str:
 def _safe_date(date: str) -> str:
     if not _DATE_RE.fullmatch(date):
         raise HTTPException(status_code=400, detail="date must be YYYY-MM-DD")
+    try:
+        datetime.strptime(date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="date must be a valid calendar date")
     return date
 
 
@@ -113,6 +117,10 @@ class WorkoutEntry(BaseModel):
     def validate_date(cls, v: str) -> str:
         if not _DATE_RE.fullmatch(v):
             raise ValueError('date must be YYYY-MM-DD')
+        try:
+            datetime.strptime(v, "%Y-%m-%d")
+        except ValueError:
+            raise ValueError('date must be a valid calendar date')
         return v
 
     @field_validator('user_id')

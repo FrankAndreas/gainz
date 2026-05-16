@@ -66,6 +66,15 @@ class TestLogWorkout:
         })
         assert r.status_code == 422
 
+    def test_impossible_calendar_date_rejected(self):
+        r = client.post("/workouts", json={
+            "exercise_id": "pushups",
+            "sets": [{"reps": 10}],
+            "date": "2026-02-31",
+            "user_id": "user1",
+        })
+        assert r.status_code == 422
+
     def test_invalid_user_id_rejected(self):
         r = client.post("/workouts", json={
             "exercise_id": "pushups",
@@ -116,6 +125,10 @@ class TestGetWorkout:
     def test_invalid_date_in_path_rejected(self):
         # Use a clearly invalid date string that still matches the {date} route param
         r = client.get("/workouts/not-a-date", params={"user_id": "user1"})
+        assert r.status_code == 400
+
+    def test_impossible_calendar_date_in_path_rejected(self):
+        r = client.get("/workouts/2026-02-31", params={"user_id": "user1"})
         assert r.status_code == 400
 
     def test_invalid_user_id_in_query_rejected(self):

@@ -20,12 +20,6 @@ export function getWeekDates(offset: number): string[] {
   });
 }
 
-export interface AllTimeRecord {
-  exerciseId: string;
-  maxReps: number;
-  maxWeight: number | null;
-}
-
 export interface ExerciseVolume {
   exerciseId: string;
   totalReps: number;
@@ -37,6 +31,8 @@ export interface ExerciseRecord {
   maxReps: number;
   maxWeight: number | null;
 }
+
+export type AllTimeRecord = ExerciseRecord;
 
 export function computeWeeklyVolume(weekWorkouts: WorkoutData[]): ExerciseVolume[] {
   const map = new Map<string, { totalReps: number; totalSets: number }>();
@@ -252,7 +248,7 @@ const App: React.FC = () => {
   const getExerciseName = (id: string) => allExercises.find(e => e.id === id)?.name ?? id;
   const currentUserName = users.find(u => u.id === currentUserId)?.name ?? '';
 
-  const weekDates = getWeekDates(weekOffset);
+  const weekDates = useMemo(() => getWeekDates(weekOffset), [weekOffset]);
   const selectedDateLabel = new Date(selectedDate + 'T00:00:00').toLocaleDateString('en', {
     weekday: 'long', day: 'numeric', month: 'long',
   });
