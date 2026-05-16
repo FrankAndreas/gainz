@@ -253,3 +253,60 @@ body {
   background: #3498db;
   display: block;
 }
+
+/* ── Weekly analytics ── */
+.analytics {
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin-bottom: 20px;
+}
+
+.analytics-heading {
+  margin: 0 0 12px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #555;
+}
+
+.analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 10px;
+}
+
+.analytics-card {
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.analytics-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #444;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.analytics-stat {
+  font-size: 20px;
+  font-weight: 700;
+  color: #3498db;
+  line-height: 1;
+  margin-bottom: 2px;
+}
+
+.analytics-sub {
+  font-size: 11px;
+  color: #888;
+}
+
+.day-heading {
+  margin-top: 4px;
+}

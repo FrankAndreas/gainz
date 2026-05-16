@@ -4,7 +4,8 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom';
 import axios from 'axios';
 
-import App, { today, getWeekDates } from './App';
+import App, { today, getWeekDates, computeWeeklyVolume, computeWeeklyRecords } from './App';
+import type { WorkoutData } from './App';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -163,8 +164,8 @@ describe('App — day detail panel', () => {
     });
 
     await renderApp();
+    // Push-ups appears in both the analytics card and the day detail — use set items to verify the detail panel
     await waitFor(() => {
-      expect(screen.getByText('Push-ups')).toBeInTheDocument();
       expect(screen.getByText('Set 1: 10 reps')).toBeInTheDocument();
       expect(screen.getByText('Set 2: 8 reps @ 5')).toBeInTheDocument();
     });
@@ -217,18 +218,136 @@ describe('App — logging a workout', () => {
   it('refreshes strip and detail after a successful log', async () => {
     await renderApp();
 
-    // Select exercise, add a set, submit
     await userEvent.selectOptions(screen.getByLabelText('Exercise:'), 'pushups');
     await userEvent.type(screen.getByLabelText('Reps:'), '10');
     await userEvent.click(screen.getByRole('button', { name: 'Add Set' }));
     await userEvent.click(screen.getByRole('button', { name: 'Log Workout' }));
 
     await waitFor(() => {
-      // Both the list and the day detail should have been re-fetched
       const listCalls = mockedAxios.get.mock.calls.filter(([url]) => url.includes('/workouts') && !/\/workouts\/\d{4}/.test(url));
       const dayCalls = mockedAxios.get.mock.calls.filter(([url]) => /\/workouts\/\d{4}-\d{2}-\d{2}/.test(url));
       expect(listCalls.length).toBeGreaterThanOrEqual(2);
       expect(dayCalls.length).toBeGreaterThanOrEqual(2);
+    });
+  });
+});
+
+// ── Analytics pure function tests ─────────────────────────────────────────────
+
+const WEEK_WITH_DATA: WorkoutData[] = [
+  {
+    date: '2026-05-12',
+    exercises: [
+      { exercise_id: 'pushups', sets: [{ reps: 10 }, { reps: 8, weight: 5 }], timestamp: '' },
+    ],
+  },
+  {
+    date: '2026-05-13',
+    exercises: [
+      { exercise_id: 'pushups', sets: [{ reps: 12 }], timestamp: '' },
+      { exercise_id: 'squats', sets: [{ reps: 15 }, { reps: 15 }], timestamp: '' },
+    ],
+  },
+  { date: '2026-05-14', exercises: [] },
+];
+
+describe('computeWeeklyVolume()', () => {
+  it('returns an entry per unique exercise', () => {
+    const result = computeWeeklyVolume(WEEK_WITH_DATA);
+    expect(result.map(v => v.exerciseId)).toEqual(
+      expect.arrayContaining(['pushups', 'squats'])
+    );
+    expect(result).toHaveLength(2);
+  });
+
+  it('sums reps across all days and sets', () => {
+    const result = computeWeeklyVolume(WEEK_WITH_DATA);
+    const pushups = result.find(v => v.exerciseId === 'pushups')!;
+    expect(pushups.totalReps).toBe(10 + 8 + 12); // 30
+    const squats = result.find(v => v.exerciseId === 'squats')!;
+    expect(squats.totalReps).toBe(15 + 15); // 30
+  });
+
+  it('counts total sets correctly', () => {
+    const result = computeWeeklyVolume(WEEK_WITH_DATA);
+    const pushups = result.find(v => v.exerciseId === 'pushups')!;
+    expect(pushups.totalSets).toBe(3); // 2 sets day 1 + 1 set day 2
+  });
+
+  it('sorts by totalReps descending', () => {
+    // pushups: 30 reps, squats: 30 reps — tie goes to insertion order;
+    // let's use a case where one clearly exceeds the other
+    const data: WorkoutData[] = [{
+      date: '2026-05-12',
+      exercises: [
+        { exercise_id: 'pushups', sets: [{ reps: 5 }], timestamp: '' },
+        { exercise_id: 'squats', sets: [{ reps: 20 }], timestamp: '' },
+      ],
+    }];
+    const result = computeWeeklyVolume(data);
+    expect(result[0].exerciseId).toBe('squats');
+  });
+
+  it('returns empty array for a week with no exercises', () => {
+    const empty: WorkoutData[] = [{ date: '2026-05-12', exercises: [] }];
+    expect(computeWeeklyVolume(empty)).toEqual([]);
+  });
+});
+
+describe('computeWeeklyRecords()', () => {
+  it('tracks max reps across all days', () => {
+    const result = computeWeeklyRecords(WEEK_WITH_DATA);
+    const pushups = result.find(r => r.exerciseId === 'pushups')!;
+    expect(pushups.maxReps).toBe(12);
+  });
+
+  it('tracks max weight across all days', () => {
+    const result = computeWeeklyRecords(WEEK_WITH_DATA);
+    const pushups = result.find(r => r.exerciseId === 'pushups')!;
+    expect(pushups.maxWeight).toBe(5);
+  });
+
+  it('sets maxWeight to null when no sets have weight', () => {
+    const result = computeWeeklyRecords(WEEK_WITH_DATA);
+    const squats = result.find(r => r.exerciseId === 'squats')!;
+    expect(squats.maxWeight).toBeNull();
+  });
+
+  it('returns empty array for an empty week', () => {
+    expect(computeWeeklyRecords([])).toEqual([]);
+  });
+});
+
+describe('App — analytics panel', () => {
+  it('renders week summary when workouts exist', async () => {
+    const todayStr = today();
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url.includes('/users')) return Promise.resolve({ data: USERS_RESPONSE });
+      if (url.includes('/exercises')) return Promise.resolve({ data: EXERCISES_RESPONSE });
+      if (/\/workouts\/\d{4}-\d{2}-\d{2}/.test(url)) {
+        // Only today has data — other days return empty so weekly total = 10 reps
+        const dateInUrl = url.match(/\/workouts\/(\d{4}-\d{2}-\d{2})/)?.[1];
+        return Promise.resolve({
+          data: dateInUrl === todayStr
+            ? { date: todayStr, exercises: [{ exercise_id: 'pushups', sets: [{ reps: 10 }], timestamp: '' }] }
+            : { date: dateInUrl, exercises: [] },
+        });
+      }
+      if (url.includes('/workouts')) return Promise.resolve({ data: { dates: [todayStr] } });
+      return Promise.reject(new Error(`Unexpected GET: ${url}`));
+    });
+
+    await renderApp();
+    await waitFor(() => {
+      expect(screen.getByText('Week summary')).toBeInTheDocument();
+      expect(screen.getByText('10 reps')).toBeInTheDocument();
+    });
+  });
+
+  it('hides week summary when the week has no workouts', async () => {
+    await renderApp();
+    await waitFor(() => {
+      expect(screen.queryByText('Week summary')).not.toBeInTheDocument();
     });
   });
 });
