@@ -1,0 +1,25 @@
+services:
+  backend:
+    image: ghcr.io/${GITHUB_REPOSITORY}/fitness-backend:latest
+    restart: unless-stopped
+    volumes:
+      - fitness-data:/app/backend/data
+    environment:
+      - ALLOWED_ORIGIN=${ALLOWED_ORIGIN:-http://localhost}
+    networks:
+      - fitness-network
+
+  frontend:
+    image: ghcr.io/${GITHUB_REPOSITORY}/fitness-frontend:latest
+    restart: unless-stopped
+    ports:
+      - "${PORT:-80}:80"
+    networks:
+      - fitness-network
+
+volumes:
+  fitness-data:
+
+networks:
+  fitness-network:
+    driver: bridge
