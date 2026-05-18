@@ -1,0 +1,51 @@
+repos:
+  # ── File hygiene ──────────────────────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+        exclude: ^frontend/node_modules/
+
+  # ── Python: lint + format (ruff runs in its own isolated env) ─────────────────
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: ^backend/
+      - id: ruff-format
+        files: ^backend/
+
+  # ── Project-specific checks (use system Python / Node) ───────────────────────
+  - repo: local
+    hooks:
+      - id: backend-tests
+        name: pytest (backend)
+        entry: python -m pytest backend/test_main.py -q --tb=short
+        language: system
+        pass_filenames: false
+        files: ^backend/
+
+      - id: frontend-typecheck
+        name: tsc (frontend)
+        entry: npm run --prefix frontend typecheck
+        language: system
+        pass_filenames: false
+        files: ^frontend/src/
+
+      - id: frontend-lint
+        name: eslint (frontend)
+        entry: npm run --prefix frontend lint
+        language: system
+        pass_filenames: false
+        files: ^frontend/src/
+
+      - id: frontend-tests
+        name: jest (frontend)
+        entry: npm test --prefix frontend -- --watchAll=false --ci
+        language: system
+        pass_filenames: false
+        files: ^frontend/src/

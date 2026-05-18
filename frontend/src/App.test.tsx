@@ -5,7 +5,7 @@ import '@testing-library/jest-dom';
 import axios from 'axios';
 
 import App, { today, getWeekDates, computeWeeklyVolume, computeWeeklyRecords } from './App';
-import type { WorkoutData, AllTimeRecord } from './App';
+import type { WorkoutData } from './App';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -114,9 +114,7 @@ describe('App — initial render', () => {
 
   it("marks today's pill as active by default", async () => {
     await renderApp();
-    const activeButton = document.querySelector('.day-pill--active');
-    expect(activeButton).toBeInTheDocument();
-    // The active pill should correspond to today's weekday abbreviation
+    const activeButton = screen.getByRole('button', { pressed: true });
     const todayWeekday = new Date(today() + 'T00:00:00').toLocaleDateString('en', { weekday: 'short' });
     expect(activeButton).toHaveTextContent(todayWeekday);
   });
@@ -141,15 +139,13 @@ describe('App — week strip activity dots', () => {
     });
 
     await renderApp();
-    await waitFor(() => {
-      expect(document.querySelector('.day-dot')).toBeInTheDocument();
-    });
+    expect(await screen.findByRole('img', { name: 'has workouts' })).toBeInTheDocument();
   });
 
   it('shows no dots when no dates are active', async () => {
     await renderApp();
     await waitFor(() => {
-      expect(document.querySelector('.day-dot')).not.toBeInTheDocument();
+      expect(screen.queryByRole('img', { name: 'has workouts' })).not.toBeInTheDocument();
     });
   });
 });
@@ -166,20 +162,18 @@ describe('App — day detail panel', () => {
 
     await renderApp();
     // Push-ups appears in both the analytics card and the day detail — use set items to verify the detail panel
-    await waitFor(() => {
-      expect(screen.getByText('Set 1: 10 reps')).toBeInTheDocument();
-      expect(screen.getByText('Set 2: 8 reps @ 5')).toBeInTheDocument();
-    });
+    expect(await screen.findByText('Set 1: 10 reps')).toBeInTheDocument();
+    expect(await screen.findByText('Set 2: 8 reps @ 5')).toBeInTheDocument();
   });
 
   it('fetches a new day when a different pill is clicked', async () => {
     await renderApp();
 
-    // Find a pill that is NOT today's and click it
-    const pills = document.querySelectorAll('.day-pill');
-    const otherPill = Array.from(pills).find(p => !p.classList.contains('day-pill--active'));
+    // Find a pill that is NOT today's and click it (day pills have aria-pressed; nav buttons do not)
+    const otherPill = screen.getAllByRole('button')
+      .find(btn => btn.getAttribute('aria-pressed') === 'false');
     if (otherPill) {
-      await userEvent.click(otherPill as HTMLElement);
+      await userEvent.click(otherPill);
     }
 
     // The day detail GET should have been called at least twice (once for today, once for the new day)
@@ -226,8 +220,10 @@ describe('App — logging a workout', () => {
 
     await waitFor(() => {
       const listCalls = mockedAxios.get.mock.calls.filter(([url]) => url.includes('/workouts') && !/\/workouts\/\d{4}/.test(url));
-      const dayCalls = mockedAxios.get.mock.calls.filter(([url]) => /\/workouts\/\d{4}-\d{2}-\d{2}/.test(url));
       expect(listCalls.length).toBeGreaterThanOrEqual(2);
+    });
+    await waitFor(() => {
+      const dayCalls = mockedAxios.get.mock.calls.filter(([url]) => /\/workouts\/\d{4}-\d{2}-\d{2}/.test(url));
       expect(dayCalls.length).toBeGreaterThanOrEqual(2);
     });
   });
@@ -339,10 +335,8 @@ describe('App — analytics panel', () => {
     });
 
     await renderApp();
-    await waitFor(() => {
-      expect(screen.getByText('Week summary')).toBeInTheDocument();
-      expect(screen.getByText('10 reps')).toBeInTheDocument();
-    });
+    expect(await screen.findByText('Week summary')).toBeInTheDocument();
+    expect(await screen.findByText('10 reps')).toBeInTheDocument();
   });
 
   it('hides week summary when the week has no workouts', async () => {
@@ -392,10 +386,8 @@ describe('App — personal records panel', () => {
   it('displays max reps for each exercise', async () => {
     setupRecordsMocks();
     await renderApp();
-    await waitFor(() => {
-      expect(screen.getByText('20 reps')).toBeInTheDocument();
-      expect(screen.getByText('12 reps')).toBeInTheDocument();
-    });
+    expect(await screen.findByText('20 reps')).toBeInTheDocument();
+    expect(await screen.findByText('12 reps')).toBeInTheDocument();
   });
 
   it('displays max weight when present', async () => {

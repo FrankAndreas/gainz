@@ -180,6 +180,21 @@ Workout data is stored in the `fitness-data` named volume and survives container
 
 ## Development
 
+### Pre-commit hooks
+
+Hooks run automatically before every commit: file hygiene, Python linting (ruff), backend tests, TypeScript type-check, ESLint, and frontend tests.
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+After that, every `git commit` triggers the checks. To run them manually on all files:
+
+```bash
+pre-commit run --all-files
+```
+
 ### Running tests
 
 ```bash

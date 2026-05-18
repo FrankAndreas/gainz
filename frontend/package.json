@@ -18,7 +18,9 @@
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
-    "dev": "react-scripts start"
+    "dev": "react-scripts start",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts,.tsx --max-warnings 0"
   },
   "eslintConfig": {
     "extends": [

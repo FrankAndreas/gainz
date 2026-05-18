@@ -122,6 +122,7 @@ const App: React.FC = () => {
   const [weekWorkouts, setWeekWorkouts] = useState<WorkoutData[]>([]);
   const [allTimeRecords, setAllTimeRecords] = useState<AllTimeRecord[]>([]);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { loadInitialData(); }, []);
 
   useEffect(() => {
@@ -341,7 +342,7 @@ const App: React.FC = () => {
               <span className="day-name">
                 {new Date(date + 'T00:00:00').toLocaleDateString('en', { weekday: 'short' })}
               </span>
-              {activeDates.has(date) && <span className="day-dot" aria-label="has workouts" />}
+              {activeDates.has(date) && <span role="img" className="day-dot" aria-label="has workouts" />}
             </button>
           ))}
         </div>
