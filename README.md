@@ -1,6 +1,6 @@
-# Fitness Tracker
+# gainz
 
-A home fitness tracking application with a Python/FastAPI backend and React/TypeScript frontend, designed to run in a VS Code dev container.
+Personal home workout tracker — log sets & reps, browse week history, and track personal records. FastAPI backend · React/TypeScript frontend · Docker-ready for self-hosting on a NAS.
 
 ## Features
 
@@ -81,8 +81,9 @@ To add more exercises edit `data/exercises.json` (created on first run):
 ## Project Structure
 
 ```
-fitness-tracker/
+gainz/
 ├── .devcontainer/          # Dev container configuration
+├── .github/workflows/      # CI pipeline (test + build + push to ghcr.io)
 ├── backend/
 │   ├── main.py             # FastAPI application
 │   ├── requirements.txt    # Python dependencies
@@ -94,7 +95,10 @@ fitness-tracker/
 │   │   ├── App.test.tsx    # React Testing Library tests
 │   │   └── index.css       # Styles
 │   └── package.json
-├── docker-compose.yml
+├── Dockerfile.backend
+├── Dockerfile.frontend
+├── docker-compose.prod.yml # Production deployment
+├── nginx.conf
 └── README.md
 ```
 
@@ -152,6 +156,28 @@ Returns dates within the range that have at least one logged workout.
 ```json
 { "dates": ["2026-05-13", "2026-05-16"] }
 ```
+
+## Deployment (Synology NAS or any Docker host)
+
+Images are built automatically by GitHub Actions on every push to `master` and pushed to the GitHub Container Registry.
+
+**First-time setup on the NAS:**
+
+```bash
+export GITHUB_REPOSITORY=your-github-username/gainz
+export ALLOWED_ORIGIN=http://your-nas-ip   # or your domain
+
+docker compose -f docker-compose.prod.yml up -d
+```
+
+**Updating to the latest image:**
+
+```bash
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+```
+
+Workout data is stored in the `fitness-data` named volume and survives container updates.
 
 ## Development
 
