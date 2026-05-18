@@ -8,8 +8,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  BACKEND_IMAGE: ghcr.io/${{ github.repository }}/fitness-backend
-  FRONTEND_IMAGE: ghcr.io/${{ github.repository }}/fitness-frontend
+  BACKEND_IMAGE: ghcr.io/frankandreas/gainz/fitness-backend
+  FRONTEND_IMAGE: ghcr.io/frankandreas/gainz/fitness-frontend
 
 jobs:
   test-backend:
