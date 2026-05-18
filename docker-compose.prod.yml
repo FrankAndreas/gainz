@@ -1,6 +1,6 @@
 services:
   backend:
-    image: ghcr.io/${GITHUB_REPOSITORY}/fitness-backend:latest
+    image: ghcr.io/frankandreas/gainz/fitness-backend:latest
     restart: unless-stopped
     volumes:
       - fitness-data:/app/backend/data
@@ -10,7 +10,7 @@ services:
       - fitness-network
 
   frontend:
-    image: ghcr.io/${GITHUB_REPOSITORY}/fitness-frontend:latest
+    image: ghcr.io/frankandreas/gainz/fitness-frontend:latest
     restart: unless-stopped
     ports:
       - "${PORT:-80}:80"

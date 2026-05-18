@@ -164,7 +164,6 @@ Images are built automatically by GitHub Actions on every push to `master` and p
 **First-time setup on the NAS:**
 
 ```bash
-export GITHUB_REPOSITORY=your-github-username/gainz
 export ALLOWED_ORIGIN=http://your-nas-ip   # or your domain
 
 docker compose -f docker-compose.prod.yml up -d
