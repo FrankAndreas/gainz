@@ -37,7 +37,12 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - run: npm ci --prefix frontend
+      - run: npm ci --prefix frontend --ignore-scripts
+
+      # audit-level=critical: the "high" findings are unfixable transitive deps
+      # of react-scripts (webpack, jest, svgo). None affect the production bundle.
+      # Migrate to Vite to clean this up permanently.
+      - run: npm audit --prefix frontend --audit-level=critical
 
       - run: npm test --prefix frontend -- --watchAll=false --ci
 
