@@ -2,7 +2,7 @@ fastapi==0.104.1
 uvicorn[standard]==0.24.0
 pydantic==2.5.0
 python-multipart==0.0.6
-filelock==3.13.1
+filelock==3.29.0
 
 # dev / test
 pytest==7.4.3
