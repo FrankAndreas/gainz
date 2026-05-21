@@ -32,7 +32,7 @@ repos:
       - id: npm-audit
         name: npm audit (frontend)
         # audit-level=critical: high findings are unfixable react-scripts transitive deps
-        entry: npm audit --prefix frontend --audit-level=critical
+        entry: npm audit --prefix frontend --audit-level=critical --legacy-peer-deps
         language: system
         pass_filenames: false
         files: ^frontend/package.*\.json$

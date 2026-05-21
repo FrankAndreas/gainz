@@ -3,7 +3,7 @@ FROM node:18-slim AS build
 WORKDIR /app
 
 COPY frontend/package*.json ./
-RUN npm ci --quiet
+RUN npm ci --quiet --ignore-scripts --legacy-peer-deps
 
 COPY frontend/ ./
 
