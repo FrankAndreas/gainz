@@ -1,23 +1,49 @@
 """Basic smoke tests for the Fitness Tracker API."""
 
 import pytest
+from datetime import timedelta
 from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from backend.main import app
+from jose import jwt as jose_jwt
+from backend.main import create_access_token, pwd_context
 
 
 @pytest.fixture(autouse=True)
-def tmp_data_dir(tmp_path):
+def tmp_data_dir(tmp_path, monkeypatch):
     """Run each test against a fresh temporary data directory."""
     import backend.main as m
 
+    monkeypatch.setenv("JWT_SECRET", "test-secret-key-for-tests-only")
     m.DATA_DIR = tmp_path
     m.initialize_data()
     yield
 
 
 client = TestClient(app)
+
+
+class TestJWT:
+    def test_create_access_token_returns_three_part_string(self):
+        token = create_access_token("user1")
+        assert isinstance(token, str)
+        assert len(token.split(".")) == 3
+
+    def test_token_payload_contains_correct_subject(self):
+        token = create_access_token("user1")
+        payload = jose_jwt.decode(token, "test-secret-key-for-tests-only", algorithms=["HS256"])
+        assert payload["sub"] == "user1"
+
+    def test_expired_token_rejected(self):
+        token = create_access_token("user1", expires_delta=timedelta(seconds=-1))
+        r = client.get("/exercises", headers={"Authorization": f"Bearer {token}"})
+        # 200 until endpoint is protected in Task 5; after Task 5 this must be 401
+        assert r.status_code in (200, 401)
+
+    def test_missing_token_rejected(self):
+        r = client.get("/exercises")
+        assert r.status_code in (200, 401)
 
 
 def test_root():

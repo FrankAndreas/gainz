@@ -1,14 +1,20 @@
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, field_validator
 from typing import List, Optional
 import json
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from contextlib import asynccontextmanager
 from filelock import FileLock
+from jose import JWTError, jwt
+from passlib.context import CryptContext
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 DATA_DIR = Path(__file__).parent / "data"
 _USER_ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
@@ -43,6 +49,56 @@ def _safe_date(date: str) -> str:
             status_code=400, detail="date must be a valid calendar date"
         )
     return date
+
+
+def _credentials_path() -> Path:
+    return DATA_DIR / "credentials.json"
+
+
+def _read_credentials() -> dict:
+    path = _credentials_path()
+    if not path.exists():
+        return {}
+    with FileLock(str(path) + ".lock"):
+        with open(path, "r") as f:
+            return json.load(f)
+
+
+def _write_credentials(data: dict) -> None:
+    path = _credentials_path()
+    with FileLock(str(path) + ".lock"):
+        with open(path, "w") as f:
+            json.dump(data, f, indent=2)
+
+
+def _jwt_secret() -> str:
+    secret = os.getenv("JWT_SECRET")
+    if not secret:
+        raise RuntimeError("JWT_SECRET environment variable must be set")
+    return secret
+
+
+def create_access_token(user_id: str, expires_delta: timedelta | None = None) -> str:
+    expire_days = int(os.getenv("JWT_EXPIRE_DAYS", "30"))
+    delta = expires_delta if expires_delta is not None else timedelta(days=expire_days)
+    payload = {"sub": user_id, "exp": datetime.utcnow() + delta}
+    return jwt.encode(payload, _jwt_secret(), algorithm="HS256")
+
+
+async def get_current_user(token: str = Depends(oauth2_scheme)) -> str:
+    exc = HTTPException(
+        status_code=401,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, _jwt_secret(), algorithms=["HS256"])
+        user_id: str | None = payload.get("sub")
+        if not user_id:
+            raise exc
+    except JWTError:
+        raise exc
+    return user_id
 
 
 def initialize_data() -> None:
@@ -113,6 +169,7 @@ def initialize_data() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _jwt_secret()  # raises RuntimeError if not set
     initialize_data()
     yield
 
