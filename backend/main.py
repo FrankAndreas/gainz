@@ -158,6 +158,7 @@ def initialize_data() -> None:
                         "name": "Planks",
                         "category": "bodyweight",
                         "muscle_groups": ["core"],
+                        "unit": "seconds",
                     },
                 ],
                 "dumbbell": [

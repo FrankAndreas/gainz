@@ -113,6 +113,7 @@ interface Exercise {
   name: string;
   category: string;
   muscle_groups: string[];
+  unit?: string;
 }
 
 export interface WorkoutSet {
@@ -170,6 +171,8 @@ const App: React.FC = () => {
   // Computed display values — must be declared before any conditional return
   const allExercises = useMemo(() => Object.values(exercises).flat(), [exercises]);
   const getExerciseName = (id: string) => allExercises.find(e => e.id === id)?.name ?? id;
+  const getExerciseUnit = (id: string) => allExercises.find(e => e.id === id)?.unit ?? 'reps';
+  const selectedExerciseUnit = getExerciseUnit(selectedExercise);
   const currentUserName = users.find(u => u.id === currentUserId)?.name ?? currentUserId;
   const weekDates = useMemo(() => getWeekDates(weekOffset), [weekOffset]);
   const selectedDateLabel = new Date(selectedDate + 'T00:00:00').toLocaleDateString('en', {
@@ -392,9 +395,9 @@ const App: React.FC = () => {
 
         <div className="form-row">
           <div className="form-group">
-            <label htmlFor="reps-input">Reps:</label>
+            <label htmlFor="reps-input">{selectedExerciseUnit === 'seconds' ? 'Duration (seconds):' : 'Reps:'}</label>
             <input id="reps-input" type="number" value={reps} onChange={(e) => setReps(e.target.value)}
-              placeholder="Number of reps" min="1" />
+              placeholder={selectedExerciseUnit === 'seconds' ? 'e.g. 30' : 'Number of reps'} min="1" />
           </div>
           <div className="form-group">
             <label htmlFor="weight-input">Weight (optional):</label>
@@ -424,7 +427,7 @@ const App: React.FC = () => {
             <h3>Sets to log:</h3>
             {pendingSets.map((set, i) => (
               <div key={i} className="set-row">
-                <span>Set {i + 1}: {set.reps} reps{set.weight !== undefined ? ` @ ${set.weight} ${weightUnit}` : ''}</span>
+                <span>Set {i + 1}: {set.reps} {selectedExerciseUnit}{set.weight !== undefined ? ` @ ${set.weight} ${weightUnit}` : ''}</span>
                 <button className="btn-remove" onClick={() => removeSet(i)} aria-label="Remove set">×</button>
               </div>
             ))}
@@ -474,7 +477,7 @@ const App: React.FC = () => {
                 return (
                   <div key={v.exerciseId} className="analytics-card">
                     <div className="analytics-name">{getExerciseName(v.exerciseId)}</div>
-                    <div className="analytics-stat">{v.totalReps} reps</div>
+                    <div className="analytics-stat">{v.totalReps} {getExerciseUnit(v.exerciseId)}</div>
                     <div className="analytics-sub">{v.totalSets} {v.totalSets === 1 ? 'set' : 'sets'}</div>
                     {rec?.maxWeight !== null && rec?.maxWeight !== undefined && (
                       <div className="analytics-sub">max {rec.maxWeight} {weightUnit}</div>
@@ -499,7 +502,7 @@ const App: React.FC = () => {
                   <div key={rec.exerciseId} className="analytics-card">
                     <div className="analytics-name">{getExerciseName(rec.exerciseId)}</div>
                     <div className={`analytics-stat${newRepsRecord ? ' analytics-stat--record' : ''}`}>
-                      {rec.maxReps} reps
+                      {rec.maxReps} {getExerciseUnit(rec.exerciseId)}
                     </div>
                     {rec.maxWeight !== null && (
                       <div className={`analytics-sub${newWeightRecord ? ' analytics-sub--record' : ''}`}>
@@ -520,7 +523,7 @@ const App: React.FC = () => {
               <strong>{getExerciseName(entry.exercise_id)}</strong>
               {entry.sets.map((set, j) => (
                 <div key={j} className="set-item">
-                  Set {j + 1}: {set.reps} reps{set.weight !== undefined ? ` @ ${set.weight} ${weightUnit}` : ''}
+                  Set {j + 1}: {set.reps} {getExerciseUnit(entry.exercise_id)}{set.weight !== undefined ? ` @ ${set.weight} ${weightUnit}` : ''}
                 </div>
               ))}
             </div>
