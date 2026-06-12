@@ -418,7 +418,7 @@ const App: React.FC = () => {
       <div className="workout-history">
         <div className="week-nav">
           <button className="btn btn-secondary" onClick={() => setWeekOffset(w => w - 1)} aria-label="Previous week">←</button>
-          <span className="week-label">Week of {weekDates[0]}</span>
+          <span className="week-label">Week of {new Date(weekDates[0] + 'T00:00:00').toLocaleDateString('en', { month: 'short', day: 'numeric' })}</span>
           <button className="btn btn-secondary" onClick={() => setWeekOffset(w => w + 1)}
             disabled={weekOffset >= 0} aria-label="Next week">→</button>
         </div>
@@ -429,6 +429,9 @@ const App: React.FC = () => {
               onClick={() => setSelectedDate(date)} aria-pressed={date === selectedDate}>
               <span className="day-name">
                 {new Date(date + 'T00:00:00').toLocaleDateString('en', { weekday: 'short' })}
+              </span>
+              <span className="day-num">
+                {new Date(date + 'T00:00:00').getDate()}
               </span>
               {activeDates.has(date) && <span role="img" className="day-dot" aria-label="has workouts" />}
             </button>

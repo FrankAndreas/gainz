@@ -246,6 +246,11 @@ body {
   font-weight: 600;
 }
 
+.day-num {
+  font-size: 12px;
+  color: #666;
+}
+
 .day-dot {
   width: 6px;
   height: 6px;
