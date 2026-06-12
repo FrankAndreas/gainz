@@ -7,7 +7,7 @@ from pathlib import Path
 # regardless of the working directory the script is invoked from.
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from backend.main import _read_credentials, _write_credentials, pwd_context  # noqa: E402
+from backend.main import _USER_ID_RE, _read_credentials, _write_credentials, pwd_context  # noqa: E402
 
 
 def main() -> None:
@@ -18,11 +18,18 @@ def main() -> None:
     user_id = sys.argv[1]
     new_password = sys.argv[2]
 
-    credentials = _read_credentials()
-    credentials[user_id] = pwd_context.hash(new_password)
-    _write_credentials(credentials)
+    if not _USER_ID_RE.match(user_id):
+        print("Error: invalid user_id format (only alphanumeric, _, - allowed)")
+        sys.exit(1)
 
-    print(f"Password for '{user_id}' updated successfully.")
+    try:
+        credentials = _read_credentials()
+        credentials[user_id] = pwd_context.hash(new_password)
+        _write_credentials(credentials)
+        print(f"Password for '{user_id}' updated successfully.")
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
