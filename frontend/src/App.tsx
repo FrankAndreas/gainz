@@ -353,6 +353,12 @@ const App: React.FC = () => {
       <div className="workout-form">
         <h2>Log Workout <span className="log-date-label">— {selectedDateLabel}</span></h2>
 
+        {message && (
+          <div className={`message ${message.isError ? 'message-error' : 'message-success'}`}>
+            {message.text}
+          </div>
+        )}
+
         <div className="form-group">
           <label htmlFor="exercise-select">Exercise:</label>
           <select id="exercise-select" value={selectedExercise} onChange={(e) => setSelectedExercise(e.target.value)}>
@@ -412,12 +418,6 @@ const App: React.FC = () => {
           {submitting ? 'Logging...' : 'Log Workout'}
         </button>
       </div>
-
-      {message && (
-        <div className={`message ${message.isError ? 'message-error' : 'message-success'}`}>
-          {message.text}
-        </div>
-      )}
 
       <div className="workout-history">
         <div className="week-nav">
