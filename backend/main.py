@@ -172,6 +172,16 @@ def initialize_data() -> None:
             },
         )
 
+    if not _credentials_path().exists():
+        initial_creds: dict[str, str] = {}
+        for key, value in os.environ.items():
+            if key.startswith("INITIAL_PASSWORD_") and value:
+                user_id = key[len("INITIAL_PASSWORD_"):]
+                if _USER_ID_RE.fullmatch(user_id):
+                    initial_creds[user_id] = pwd_context.hash(value)
+        if initial_creds:
+            _write_credentials(initial_creds)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

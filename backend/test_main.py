@@ -402,6 +402,39 @@ class TestGetRecords:
         assert r.status_code == 500
 
 
+class TestCredentialInit:
+    def test_creates_credentials_from_env_vars(self, tmp_path, monkeypatch):
+        import backend.main as m
+        monkeypatch.setenv("JWT_SECRET", "test-secret")
+        monkeypatch.setenv("INITIAL_PASSWORD_user1", "secret1")
+        monkeypatch.setenv("INITIAL_PASSWORD_user2", "secret2")
+        m.DATA_DIR = tmp_path
+        m.initialize_data()
+        creds = m._read_credentials()
+        assert "user1" in creds
+        assert "user2" in creds
+        assert pwd_context.verify("secret1", creds["user1"])
+        assert pwd_context.verify("secret2", creds["user2"])
+
+    def test_does_not_overwrite_existing_credentials(self, tmp_path, monkeypatch):
+        import backend.main as m
+        monkeypatch.setenv("JWT_SECRET", "test-secret")
+        monkeypatch.setenv("INITIAL_PASSWORD_user1", "original")
+        m.DATA_DIR = tmp_path
+        m.initialize_data()
+        original_hash = m._read_credentials()["user1"]
+        monkeypatch.setenv("INITIAL_PASSWORD_user1", "changed")
+        m.initialize_data()
+        assert m._read_credentials()["user1"] == original_hash
+
+    def test_no_credentials_file_created_when_no_env_vars(self, tmp_path, monkeypatch):
+        import backend.main as m
+        monkeypatch.setenv("JWT_SECRET", "test-secret")
+        m.DATA_DIR = tmp_path
+        m.initialize_data()
+        assert not m._credentials_path().exists()
+
+
 class TestErrorHandling:
     """OSError paths — simulated disk failures."""
 
