@@ -245,6 +245,11 @@ class WorkoutEntry(BaseModel):
         return v
 
 
+class LoginRequest(BaseModel):
+    user_id: str
+    password: str
+
+
 def _all_exercise_ids() -> set:
     data = _read_json(DATA_DIR / "exercises.json")
     return {ex["id"] for exercises in data.values() for ex in exercises}
@@ -269,6 +274,22 @@ async def get_exercises():
         return _read_json(DATA_DIR / "exercises.json")
     except OSError:
         raise HTTPException(status_code=500, detail="Could not read exercise data")
+
+
+_AUTH_ERROR = HTTPException(
+    status_code=401,
+    detail="Incorrect user ID or password",
+    headers={"WWW-Authenticate": "Bearer"},
+)
+
+
+@app.post("/login")
+async def login(request: LoginRequest):
+    creds = _read_credentials()
+    stored_hash = creds.get(request.user_id)
+    if not stored_hash or not pwd_context.verify(request.password, stored_hash):
+        raise _AUTH_ERROR
+    return {"access_token": create_access_token(request.user_id), "token_type": "bearer"}
 
 
 @app.post("/workouts")

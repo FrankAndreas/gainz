@@ -402,6 +402,46 @@ class TestGetRecords:
         assert r.status_code == 500
 
 
+@pytest.fixture
+def with_credentials(monkeypatch, tmp_path):
+    import backend.main as m
+    monkeypatch.setenv("JWT_SECRET", "test-secret-key-for-tests-only")
+    m.DATA_DIR = tmp_path
+    m.initialize_data()
+    m._write_credentials({
+        "user1": pwd_context.hash("password1"),
+        "user2": pwd_context.hash("password2"),
+    })
+
+
+class TestLogin:
+    def test_valid_credentials_return_token(self, with_credentials):
+        r = client.post("/login", json={"user_id": "user1", "password": "password1"})
+        assert r.status_code == 200
+        body = r.json()
+        assert "access_token" in body
+        assert body["token_type"] == "bearer"
+
+    def test_wrong_password_returns_401(self, with_credentials):
+        r = client.post("/login", json={"user_id": "user1", "password": "wrong"})
+        assert r.status_code == 401
+
+    def test_unknown_user_returns_401(self, with_credentials):
+        r = client.post("/login", json={"user_id": "ghost", "password": "anything"})
+        assert r.status_code == 401
+
+    def test_wrong_password_and_unknown_user_same_error_message(self, with_credentials):
+        r_wrong = client.post("/login", json={"user_id": "user1", "password": "wrong"})
+        r_unknown = client.post("/login", json={"user_id": "ghost", "password": "anything"})
+        assert r_wrong.json()["detail"] == r_unknown.json()["detail"]
+
+    def test_token_contains_correct_user_id(self, with_credentials):
+        r = client.post("/login", json={"user_id": "user1", "password": "password1"})
+        token = r.json()["access_token"]
+        payload = jose_jwt.decode(token, "test-secret-key-for-tests-only", algorithms=["HS256"])
+        assert payload["sub"] == "user1"
+
+
 class TestCredentialInit:
     def test_creates_credentials_from_env_vars(self, tmp_path, monkeypatch):
         import backend.main as m
