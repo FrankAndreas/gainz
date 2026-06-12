@@ -51,6 +51,11 @@ def _safe_date(date: str) -> str:
     return date
 
 
+def _assert_own_resource(current_user: str, requested_user_id: str) -> None:
+    if current_user != requested_user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+
 def _credentials_path() -> Path:
     return DATA_DIR / "credentials.json"
 
@@ -269,7 +274,7 @@ async def get_users():
 
 
 @app.get("/exercises")
-async def get_exercises():
+async def get_exercises(current_user: str = Depends(get_current_user)):
     try:
         return _read_json(DATA_DIR / "exercises.json")
     except OSError:
@@ -293,7 +298,9 @@ async def login(request: LoginRequest):
 
 
 @app.post("/workouts")
-async def log_workout(entry: WorkoutEntry):
+async def log_workout(entry: WorkoutEntry, current_user: str = Depends(get_current_user)):
+    _assert_own_resource(current_user, entry.user_id)
+
     try:
         user_data = _read_json(DATA_DIR / "users.json")
     except OSError:
@@ -343,8 +350,10 @@ async def list_workout_dates(
     user_id: str = Query(...),
     date_from: str = Query(...),
     date_to: str = Query(...),
+    current_user: str = Depends(get_current_user),
 ) -> dict:
     _safe_user_id(user_id)
+    _assert_own_resource(current_user, user_id)
     _safe_date(date_from)
     _safe_date(date_to)
 
@@ -367,8 +376,12 @@ async def list_workout_dates(
 
 
 @app.get("/records")
-async def get_records(user_id: str = Query(...)) -> dict:
+async def get_records(
+    user_id: str = Query(...),
+    current_user: str = Depends(get_current_user),
+) -> dict:
     _safe_user_id(user_id)
+    _assert_own_resource(current_user, user_id)
 
     workout_dir = DATA_DIR / "workouts" / user_id
     if not workout_dir.exists():
@@ -405,9 +418,14 @@ async def get_records(user_id: str = Query(...)) -> dict:
 
 
 @app.get("/workouts/{date}")
-async def get_workout(date: str, user_id: str = Query(...)):
+async def get_workout(
+    date: str,
+    user_id: str = Query(...),
+    current_user: str = Depends(get_current_user),
+):
     _safe_date(date)
     _safe_user_id(user_id)
+    _assert_own_resource(current_user, user_id)
 
     workout_file = DATA_DIR / "workouts" / user_id / f"{date}.json"
     if not workout_file.exists():
