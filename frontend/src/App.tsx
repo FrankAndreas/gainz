@@ -159,6 +159,7 @@ const App: React.FC = () => {
   const [historyWorkout, setHistoryWorkout] = useState<WorkoutData | null>(null);
   const [weekWorkouts, setWeekWorkouts] = useState<WorkoutData[]>([]);
   const [allTimeRecords, setAllTimeRecords] = useState<AllTimeRecord[]>([]);
+  const [lastRemovedSet, setLastRemovedSet] = useState<{ set: WorkoutSet; index: number } | null>(null);
 
   // Derived from token — no separate state needed
   const currentUserId = useMemo(
@@ -299,7 +300,23 @@ const App: React.FC = () => {
     setWeight('');
   };
 
-  const removeSet = (index: number) => setPendingSets(prev => prev.filter((_, i) => i !== index));
+  const removeSet = (index: number) => {
+    setPendingSets(prev => {
+      setLastRemovedSet({ set: prev[index], index });
+      return prev.filter((_, i) => i !== index);
+    });
+    setTimeout(() => setLastRemovedSet(null), 3000);
+  };
+
+  const undoRemoveSet = () => {
+    if (!lastRemovedSet) return;
+    setPendingSets(prev => {
+      const next = [...prev];
+      next.splice(lastRemovedSet.index, 0, lastRemovedSet.set);
+      return next;
+    });
+    setLastRemovedSet(null);
+  };
 
   const logWorkout = async () => {
     if (!selectedExercise || pendingSets.length === 0) {
@@ -402,7 +419,7 @@ const App: React.FC = () => {
           <button className="btn btn-secondary" onClick={addSet} type="button">Add Set</button>
         </div>
 
-        {pendingSets.length > 0 && (
+        {(pendingSets.length > 0 || lastRemovedSet) && (
           <div className="pending-sets">
             <h3>Sets to log:</h3>
             {pendingSets.map((set, i) => (
@@ -411,6 +428,12 @@ const App: React.FC = () => {
                 <button className="btn-remove" onClick={() => removeSet(i)} aria-label="Remove set">×</button>
               </div>
             ))}
+            {lastRemovedSet && (
+              <div className="undo-row">
+                <span>Set removed.</span>
+                <button className="btn-undo" onClick={undoRemoveSet}>Undo</button>
+              </div>
+            )}
           </div>
         )}
 
