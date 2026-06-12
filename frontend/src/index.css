@@ -343,6 +343,43 @@ body {
   font-size: 13px;
 }
 
+/* ── Login page ── */
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #eaf0f6;
+}
+
+.login-card {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  padding: 40px 36px;
+  width: 100%;
+  max-width: 360px;
+}
+
+.login-title {
+  margin: 0 0 6px;
+  font-size: 24px;
+  color: #2c3e50;
+  text-align: center;
+}
+
+.login-subtitle {
+  margin: 0 0 28px;
+  color: #888;
+  text-align: center;
+  font-size: 14px;
+}
+
+.login-btn {
+  width: 100%;
+  margin-top: 8px;
+}
+
 .undo-row {
   display: flex;
   align-items: center;

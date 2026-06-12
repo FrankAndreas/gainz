@@ -49,13 +49,10 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
   };
 
   return (
-    <div className="app">
-      <header className="header">
-        <h1>Fitness Tracker</h1>
-        <p>Sign in to continue</p>
-      </header>
-      <div className="workout-form">
-        <h2>Sign in</h2>
+    <div className="login-page">
+      <div className="login-card">
+        <h1 className="login-title">Fitness Tracker</h1>
+        <p className="login-subtitle">Sign in to continue</p>
         <form onSubmit={handleSubmit}>
           <div className="form-group">
             <label htmlFor="login-user">Who are you?</label>
@@ -82,7 +79,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
           {error && (
             <div className="message message-error" role="alert">{error}</div>
           )}
-          <button className="btn" type="submit" disabled={loading || !selectedUserId}>
+          <button className="btn login-btn" type="submit" disabled={loading || !selectedUserId}>
             {loading ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
