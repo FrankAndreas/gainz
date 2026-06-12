@@ -6,6 +6,13 @@ services:
       - fitness-data:/app/backend/data
     environment:
       - ALLOWED_ORIGIN=${ALLOWED_ORIGIN:-http://localhost}
+      # Required: generate with: python -c "import secrets; print(secrets.token_hex(32))"
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set}
+      # First-boot only: set initial passwords, then remove these lines.
+      # To change a password later:
+      #   docker compose exec backend python set_password.py <user_id> <new_password>
+      - INITIAL_PASSWORD_user1=${INITIAL_PASSWORD_user1:-}
+      - INITIAL_PASSWORD_user2=${INITIAL_PASSWORD_user2:-}
     networks:
       - fitness-network
 
