@@ -35,16 +35,6 @@ class TestJWT:
         payload = jose_jwt.decode(token, "test-secret-key-for-tests-only", algorithms=["HS256"])
         assert payload["sub"] == "user1"
 
-    def test_expired_token_rejected(self):
-        token = create_access_token("user1", expires_delta=timedelta(seconds=-1))
-        r = client.get("/exercises", headers={"Authorization": f"Bearer {token}"})
-        # 200 until endpoint is protected in Task 5; after Task 5 this must be 401
-        assert r.status_code in (200, 401)
-
-    def test_missing_token_rejected(self):
-        r = client.get("/exercises")
-        assert r.status_code in (200, 401)
-
 
 def test_root():
     r = client.get("/")

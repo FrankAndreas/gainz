@@ -6,7 +6,7 @@ from typing import List, Optional
 import json
 import os
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from contextlib import asynccontextmanager
 from filelock import FileLock
@@ -57,18 +57,21 @@ def _credentials_path() -> Path:
 
 def _read_credentials() -> dict:
     path = _credentials_path()
-    if not path.exists():
-        return {}
     with FileLock(str(path) + ".lock"):
-        with open(path, "r") as f:
-            return json.load(f)
+        try:
+            with open(path, "r") as f:
+                return json.load(f)
+        except FileNotFoundError:
+            return {}
 
 
 def _write_credentials(data: dict) -> None:
     path = _credentials_path()
+    tmp = Path(str(path) + ".tmp")
     with FileLock(str(path) + ".lock"):
-        with open(path, "w") as f:
+        with open(tmp, "w") as f:
             json.dump(data, f, indent=2)
+        os.replace(tmp, path)
 
 
 def _jwt_secret() -> str:
@@ -79,9 +82,12 @@ def _jwt_secret() -> str:
 
 
 def create_access_token(user_id: str, expires_delta: timedelta | None = None) -> str:
-    expire_days = int(os.getenv("JWT_EXPIRE_DAYS", "30"))
+    try:
+        expire_days = int(os.getenv("JWT_EXPIRE_DAYS", "30"))
+    except ValueError:
+        raise RuntimeError("JWT_EXPIRE_DAYS must be a plain integer (e.g. 30)")
     delta = expires_delta if expires_delta is not None else timedelta(days=expire_days)
-    payload = {"sub": user_id, "exp": datetime.utcnow() + delta}
+    payload = {"sub": user_id, "exp": datetime.now(timezone.utc) + delta}
     return jwt.encode(payload, _jwt_secret(), algorithm="HS256")
 
 
