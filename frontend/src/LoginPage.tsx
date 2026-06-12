@@ -24,6 +24,8 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
       const loaded: User[] = r.data.users;
       setUsers(loaded);
       if (loaded.length > 0) setSelectedUserId(loaded[0].id);
+    }).catch(() => {
+      setError('Failed to load users. Please refresh the page.');
     });
   }, []);
 
