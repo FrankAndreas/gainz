@@ -1,7 +1,40 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
+import LoginPage from './LoginPage';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+
+// ── Token helpers ─────────────────────────────────────────────────────────────
+
+const TOKEN_KEY = 'fitness_token';
+
+function getStoredToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+function clearStoredToken(): void {
+  localStorage.removeItem(TOKEN_KEY);
+}
+
+function parseTokenPayload(token: string): { sub: string; exp: number } | null {
+  try {
+    const raw = token.split('.')[1];
+    const padded = raw + '=='.slice(0, (4 - raw.length % 4) % 4);
+    return JSON.parse(atob(padded));
+  } catch {
+    return null;
+  }
+}
+
+function isTokenExpired(token: string): boolean {
+  const payload = parseTokenPayload(token);
+  if (!payload) return true;
+  return Date.now() / 1000 >= payload.exp;
+}
+
+function getUserIdFromToken(token: string): string | null {
+  return parseTokenPayload(token)?.sub ?? null;
+}
 
 // ── Pure helpers (exported for unit tests) ────────────────────────────────────
 
@@ -101,8 +134,14 @@ export interface WorkoutData {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 const App: React.FC = () => {
+  // Auth state: initialised from localStorage so there's no flash of login screen
+  const [authToken, setAuthToken] = useState<string | null>(() => {
+    const t = getStoredToken();
+    return t && !isTokenExpired(t) ? t : null;
+  });
+
+  // All other state
   const [users, setUsers] = useState<User[]>([]);
-  const [currentUserId, setCurrentUserId] = useState<string>('');
   const [exercises, setExercises] = useState<{ [key: string]: Exercise[] }>({});
   const [selectedExercise, setSelectedExercise] = useState<string>('');
   const [reps, setReps] = useState<string>('');
@@ -111,19 +150,55 @@ const App: React.FC = () => {
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [initialLoading, setInitialLoading] = useState<boolean>(true);
   const [message, setMessage] = useState<{ text: string; isError: boolean } | null>(null);
-
-  // History browser
   const [selectedDate, setSelectedDate] = useState<string>(today());
   const [weekOffset, setWeekOffset] = useState<number>(0);
   const [activeDates, setActiveDates] = useState<Set<string>>(new Set());
   const [historyWorkout, setHistoryWorkout] = useState<WorkoutData | null>(null);
-
-  // Analytics
   const [weekWorkouts, setWeekWorkouts] = useState<WorkoutData[]>([]);
   const [allTimeRecords, setAllTimeRecords] = useState<AllTimeRecord[]>([]);
 
+  // Derived from token — no separate state needed
+  const currentUserId = useMemo(
+    () => (authToken ? (getUserIdFromToken(authToken) ?? '') : ''),
+    [authToken],
+  );
+
+  // Computed display values — must be declared before any conditional return
+  const allExercises = useMemo(() => Object.values(exercises).flat(), [exercises]);
+  const getExerciseName = (id: string) => allExercises.find(e => e.id === id)?.name ?? id;
+  const currentUserName = users.find(u => u.id === currentUserId)?.name ?? currentUserId;
+  const weekDates = useMemo(() => getWeekDates(weekOffset), [weekOffset]);
+  const selectedDateLabel = new Date(selectedDate + 'T00:00:00').toLocaleDateString('en', {
+    weekday: 'long', day: 'numeric', month: 'long',
+  });
+  const weeklyVolume = useMemo(() => computeWeeklyVolume(weekWorkouts), [weekWorkouts]);
+  const weeklyRecords = useMemo(() => computeWeeklyRecords(weekWorkouts), [weekWorkouts]);
+
+  // Attach axios interceptors once; clean up on unmount
+  useEffect(() => {
+    const reqId = axios.interceptors.request.use((config) => {
+      const token = getStoredToken();
+      if (token) config.headers.Authorization = `Bearer ${token}`;
+      return config;
+    });
+    const resId = axios.interceptors.response.use(
+      (r) => r,
+      (err) => {
+        if (err.response?.status === 401) {
+          clearStoredToken();
+          setAuthToken(null);
+        }
+        return Promise.reject(err);
+      },
+    );
+    return () => {
+      axios.interceptors.request.eject(reqId);
+      axios.interceptors.response.eject(resId);
+    };
+  }, []);
+
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { loadInitialData(); }, []);
+  useEffect(() => { if (authToken) loadInitialData(); }, [authToken]);
 
   useEffect(() => {
     if (!currentUserId) return;
@@ -147,15 +222,21 @@ const App: React.FC = () => {
     setTimeout(() => setMessage(null), 4000);
   };
 
+  const handleLogin = (token: string) => setAuthToken(token);
+
+  const handleLogout = () => {
+    clearStoredToken();
+    setAuthToken(null);
+  };
+
   const loadInitialData = async () => {
+    setInitialLoading(true);
     try {
       const [usersRes, exercisesRes] = await Promise.all([
         axios.get(`${API_URL}/users`),
         axios.get(`${API_URL}/exercises`),
       ]);
-      const loadedUsers: User[] = usersRes.data.users;
-      setUsers(loadedUsers);
-      setCurrentUserId(loadedUsers[0]?.id ?? '');
+      setUsers(usersRes.data.users);
       setExercises(exercisesRes.data);
     } catch {
       showMessage('Error loading data. Make sure the backend is running.', true);
@@ -164,19 +245,19 @@ const App: React.FC = () => {
     }
   };
 
-  const fetchWeekActiveDates = async (userId: string, weekDates: string[]) => {
+  const fetchWeekActiveDates = async (userId: string, weekDts: string[]) => {
     try {
       const res = await axios.get(`${API_URL}/workouts`, {
-        params: { user_id: userId, date_from: weekDates[0], date_to: weekDates[6] },
+        params: { user_id: userId, date_from: weekDts[0], date_to: weekDts[6] },
       });
       setActiveDates(new Set(res.data.dates));
     } catch { /* non-critical */ }
   };
 
-  const fetchWeekWorkouts = async (userId: string, weekDates: string[]) => {
+  const fetchWeekWorkouts = async (userId: string, weekDts: string[]) => {
     try {
       const results = await Promise.all(
-        weekDates.map(date =>
+        weekDts.map(date =>
           axios.get(`${API_URL}/workouts/${date}`, { params: { user_id: userId } })
         )
       );
@@ -233,9 +314,9 @@ const App: React.FC = () => {
       showMessage('Workout logged successfully!');
       setSelectedExercise('');
       setPendingSets([]);
-      const weekDates = getWeekDates(weekOffset);
-      fetchWeekActiveDates(currentUserId, weekDates);
-      fetchWeekWorkouts(currentUserId, weekDates);
+      const wDates = getWeekDates(weekOffset);
+      fetchWeekActiveDates(currentUserId, wDates);
+      fetchWeekWorkouts(currentUserId, wDates);
       fetchDayWorkout(currentUserId, selectedDate);
       fetchAllTimeRecords(currentUserId);
     } catch {
@@ -245,17 +326,10 @@ const App: React.FC = () => {
     }
   };
 
-  const allExercises = useMemo(() => Object.values(exercises).flat(), [exercises]);
-  const getExerciseName = (id: string) => allExercises.find(e => e.id === id)?.name ?? id;
-  const currentUserName = users.find(u => u.id === currentUserId)?.name ?? '';
-
-  const weekDates = useMemo(() => getWeekDates(weekOffset), [weekOffset]);
-  const selectedDateLabel = new Date(selectedDate + 'T00:00:00').toLocaleDateString('en', {
-    weekday: 'long', day: 'numeric', month: 'long',
-  });
-
-  const weeklyVolume = useMemo(() => computeWeeklyVolume(weekWorkouts), [weekWorkouts]);
-  const weeklyRecords = useMemo(() => computeWeeklyRecords(weekWorkouts), [weekWorkouts]);
+  // Show login screen when not authenticated
+  if (!authToken) {
+    return <LoginPage onLogin={handleLogin} />;
+  }
 
   if (initialLoading) {
     return <div className="app"><p className="loading">Loading...</p></div>;
@@ -265,15 +339,13 @@ const App: React.FC = () => {
     <div className="app">
       <header className="header">
         <h1>Fitness Tracker</h1>
-        <p>Track your workouts at home</p>
+        <div className="header-user">
+          <span>{currentUserName}</span>
+          <button className="btn btn-secondary btn-sm" onClick={handleLogout} type="button">
+            Sign out
+          </button>
+        </div>
       </header>
-
-      <div className="user-selector">
-        <label htmlFor="user-select">Current User: {currentUserName}</label>
-        <select id="user-select" value={currentUserId} onChange={(e) => setCurrentUserId(e.target.value)}>
-          {users.map(user => <option key={user.id} value={user.id}>{user.name}</option>)}
-        </select>
-      </div>
 
       <div className="workout-form">
         <h2>Log Workout</h2>
@@ -326,7 +398,6 @@ const App: React.FC = () => {
       )}
 
       <div className="workout-history">
-        {/* Week navigation */}
         <div className="week-nav">
           <button className="btn btn-secondary" onClick={() => setWeekOffset(w => w - 1)} aria-label="Previous week">←</button>
           <span className="week-label">Week of {weekDates[0]}</span>
@@ -334,7 +405,6 @@ const App: React.FC = () => {
             disabled={weekOffset >= 0} aria-label="Next week">→</button>
         </div>
 
-        {/* Day strip */}
         <div className="week-strip">
           {weekDates.map(date => (
             <button key={date} className={`day-pill${date === selectedDate ? ' day-pill--active' : ''}`}
@@ -347,7 +417,6 @@ const App: React.FC = () => {
           ))}
         </div>
 
-        {/* Weekly analytics */}
         {weeklyVolume.length > 0 && (
           <div className="analytics">
             <h3 className="analytics-heading">Week summary</h3>
@@ -369,7 +438,6 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* All-time personal records */}
         {allTimeRecords.length > 0 && (
           <div className="analytics records-panel">
             <h3 className="analytics-heading">Personal records</h3>
@@ -397,7 +465,6 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* Day detail */}
         <h2 className="day-heading">{selectedDateLabel}</h2>
         {historyWorkout && historyWorkout.exercises.length > 0 ? (
           historyWorkout.exercises.map((entry, i) => (

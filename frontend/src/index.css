@@ -323,3 +323,17 @@ body {
   color: #e67e22;
   font-weight: 600;
 }
+
+.header-user {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 14px;
+  opacity: 0.9;
+}
+
+.btn-sm {
+  padding: 4px 12px;
+  font-size: 13px;
+}

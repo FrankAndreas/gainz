@@ -10,6 +10,15 @@ import type { WorkoutData } from './App';
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 
+// Creates a minimal JWT-shaped token the frontend's parseTokenPayload can decode.
+// The frontend only checks exp and sub — no signature verification.
+function makeTestToken(userId: string = 'user1'): string {
+  const payload = btoa(JSON.stringify({ sub: userId, exp: 9999999999 }));
+  return `fake-header.${payload}.fake-sig`;
+}
+
+const TEST_TOKEN = makeTestToken('user1');
+
 // ── Shared fixtures ───────────────────────────────────────────────────────────
 
 const USERS_RESPONSE = {
@@ -47,6 +56,16 @@ function setupDefaultMocks() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // axios is fully mocked — provide stub interceptors so App's useEffect doesn't throw
+  (mockedAxios as any).interceptors = {
+    request: { use: jest.fn().mockReturnValue(1), eject: jest.fn() },
+    response: { use: jest.fn().mockReturnValue(1), eject: jest.fn() },
+  };
+  // Simulate a logged-in user so App renders the main UI, not LoginPage
+  jest.spyOn(Storage.prototype, 'getItem').mockImplementation((key) =>
+    key === 'fitness_token' ? TEST_TOKEN : null
+  );
+  jest.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {});
   setupDefaultMocks();
 });
 
@@ -412,5 +431,26 @@ describe('App — personal records panel', () => {
       const recordsCalls = mockedAxios.get.mock.calls.filter(([url]) => url.includes('/records'));
       expect(recordsCalls.length).toBeGreaterThanOrEqual(2);
     });
+  });
+});
+
+describe('App — authentication', () => {
+  it('shows the login page when no token is stored', () => {
+    jest.spyOn(Storage.prototype, 'getItem').mockReturnValue(null);
+    render(<App />);
+    expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument();
+  });
+
+  it('shows a sign-out button when logged in', async () => {
+    await renderApp();
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+  });
+
+  it('signs out and shows login page on sign-out click', async () => {
+    const removeSpy = jest.spyOn(Storage.prototype, 'removeItem');
+    await renderApp();
+    await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+    expect(removeSpy).toHaveBeenCalledWith('fitness_token');
+    expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument();
   });
 });
