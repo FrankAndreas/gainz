@@ -14,10 +14,24 @@ body {
   padding: 20px;
 }
 
-.loading {
-  text-align: center;
-  color: #666;
-  margin-top: 40px;
+.loading-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid #ddd;
+  border-top-color: #3498db;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
 }
 
 .header {

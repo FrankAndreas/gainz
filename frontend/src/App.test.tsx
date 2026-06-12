@@ -73,7 +73,7 @@ beforeEach(() => {
 
 async function renderApp() {
   render(<App />);
-  await waitFor(() => expect(screen.queryByText('Loading...')).not.toBeInTheDocument());
+  await waitFor(() => expect(screen.queryByLabelText('Loading')).not.toBeInTheDocument());
 }
 
 // ── Pure helper unit tests ────────────────────────────────────────────────────
@@ -120,7 +120,7 @@ describe('App — initial render', () => {
     // Delay both responses so loading state is visible
     mockedAxios.get.mockReturnValue(new Promise(() => {}));
     render(<App />);
-    expect(screen.getByText('Loading...')).toBeInTheDocument();
+    expect(screen.getByLabelText('Loading')).toBeInTheDocument();
   });
 
   it('renders the week strip with 7 day pills after loading', async () => {

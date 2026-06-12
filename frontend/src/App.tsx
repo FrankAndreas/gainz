@@ -355,7 +355,7 @@ const App: React.FC = () => {
   }
 
   if (initialLoading) {
-    return <div className="app"><p className="loading">Loading...</p></div>;
+    return <div className="loading-screen"><div className="spinner" aria-label="Loading" /></div>;
   }
 
   return (
