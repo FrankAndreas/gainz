@@ -338,6 +338,12 @@ body {
   font-size: 13px;
 }
 
+.log-date-label {
+  font-size: 14px;
+  font-weight: 400;
+  color: #888;
+}
+
 .weight-input-row {
   display: flex;
   gap: 6px;

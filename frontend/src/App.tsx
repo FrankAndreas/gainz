@@ -311,7 +311,7 @@ const App: React.FC = () => {
       await axios.post(`${API_URL}/workouts`, {
         exercise_id: selectedExercise,
         sets: pendingSets,
-        date: today(),
+        date: selectedDate,
         user_id: currentUserId,
       });
       showMessage('Workout logged successfully!');
@@ -351,7 +351,7 @@ const App: React.FC = () => {
       </header>
 
       <div className="workout-form">
-        <h2>Log Workout</h2>
+        <h2>Log Workout <span className="log-date-label">— {selectedDateLabel}</span></h2>
 
         <div className="form-group">
           <label htmlFor="exercise-select">Exercise:</label>
