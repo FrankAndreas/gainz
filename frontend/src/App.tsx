@@ -468,6 +468,10 @@ const App: React.FC = () => {
           ))}
         </div>
 
+        {weeklyVolume.length === 0 && (
+          <p className="analytics-empty">Log a workout to see your week summary and personal records here.</p>
+        )}
+
         {weeklyVolume.length > 0 && (
           <div className="analytics">
             <h3 className="analytics-heading">Week summary</h3>

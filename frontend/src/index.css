@@ -326,6 +326,13 @@ body {
   color: #888;
 }
 
+.analytics-empty {
+  color: #aaa;
+  font-size: 14px;
+  text-align: center;
+  padding: 20px 0 8px;
+}
+
 .day-heading {
   margin-top: 4px;
 }
