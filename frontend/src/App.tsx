@@ -357,8 +357,12 @@ const App: React.FC = () => {
           <label htmlFor="exercise-select">Exercise:</label>
           <select id="exercise-select" value={selectedExercise} onChange={(e) => setSelectedExercise(e.target.value)}>
             <option value="">Select an exercise...</option>
-            {allExercises.map(ex => (
-              <option key={ex.id} value={ex.id}>{ex.name} ({ex.category})</option>
+            {Object.entries(exercises).map(([category, exs]) => (
+              <optgroup key={category} label={category.charAt(0).toUpperCase() + category.slice(1)}>
+                {exs.map(ex => (
+                  <option key={ex.id} value={ex.id}>{ex.name}</option>
+                ))}
+              </optgroup>
             ))}
           </select>
         </div>
