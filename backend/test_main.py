@@ -46,6 +46,12 @@ def test_root():
     assert r.json()["message"] == "Fitness Tracker API"
 
 
+def test_health():
+    r = client.get("/health")
+    assert r.status_code == 200
+    assert r.json() == {"status": "ok"}
+
+
 def test_get_users():
     r = client.get("/users")
     assert r.status_code == 200
