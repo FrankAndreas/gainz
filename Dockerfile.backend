@@ -3,12 +3,23 @@ FROM python:3.11-slim
 WORKDIR /app
 
 COPY backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt && \
+    apt-get update && apt-get install -y --no-install-recommends gosu && \
+    rm -rf /var/lib/apt/lists/*
 
 COPY backend/ ./backend/
+
+RUN adduser --disabled-password --gecos "" --uid 1001 appuser
 
 ENV PYTHONPATH=/app
 
 EXPOSE 8000
 
+# entrypoint: ensure the data volume (mounted at runtime) is owned by appuser,
+# then exec the server as non-root. The chown is a no-op after first boot.
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+ENTRYPOINT ["docker-entrypoint.sh"]
+# Single worker: correct for a low-RAM NAS. See mem_limit in docker-compose.prod.yml.
 CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
