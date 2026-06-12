@@ -2,6 +2,10 @@ services:
   backend:
     image: ghcr.io/frankandreas/gainz/fitness-backend:latest
     restart: unless-stopped
+    # Single uvicorn worker is intentional: correct for a low-RAM NAS and ≤10 concurrent users.
+    # Do not raise mem_limit without also increasing --workers in Dockerfile.backend.
+    mem_limit: 256m
+    memswap_limit: 256m
     volumes:
       - fitness-data:/app/backend/data
     environment:
@@ -13,19 +17,42 @@ services:
       #   docker compose exec backend python set_password.py <user_id> <new_password>
       - INITIAL_PASSWORD_user1=${INITIAL_PASSWORD_user1:-}
       - INITIAL_PASSWORD_user2=${INITIAL_PASSWORD_user2:-}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - fitness-network
 
   frontend:
     image: ghcr.io/frankandreas/gainz/fitness-frontend:latest
     restart: unless-stopped
+    mem_limit: 64m
+    memswap_limit: 64m
     ports:
       - "${PORT:-80}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
     networks:
       - fitness-network
 
 volumes:
   fitness-data:
+    # Data lives at /volume1/docker/volumes/fitness-tracker_fitness-data/_data on Synology.
+    # Back it up with Hyper Backup or: tar -czf backup.tar.gz /volume1/docker/volumes/fitness-tracker_fitness-data
 
 networks:
   fitness-network:
