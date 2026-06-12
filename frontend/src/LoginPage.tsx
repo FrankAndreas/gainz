@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { TOKEN_KEY } from './App';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
@@ -38,7 +39,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
         user_id: selectedUserId,
         password,
       });
-      localStorage.setItem('fitness_token', r.data.access_token);
+      localStorage.setItem(TOKEN_KEY, r.data.access_token);
       onLogin(r.data.access_token);
     } catch {
       setError('Invalid user or password');

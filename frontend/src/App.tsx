@@ -6,7 +6,7 @@ const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
 // ── Token helpers ─────────────────────────────────────────────────────────────
 
-const TOKEN_KEY = 'fitness_token';
+export const TOKEN_KEY = 'fitness_token';
 
 function getStoredToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
