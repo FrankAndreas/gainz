@@ -146,6 +146,9 @@ const App: React.FC = () => {
   const [selectedExercise, setSelectedExercise] = useState<string>('');
   const [reps, setReps] = useState<string>('');
   const [weight, setWeight] = useState<string>('');
+  const [weightUnit, setWeightUnit] = useState<'kg' | 'lbs'>(() =>
+    (localStorage.getItem('fitness_weight_unit') as 'kg' | 'lbs') || 'kg'
+  );
   const [pendingSets, setPendingSets] = useState<WorkoutSet[]>([]);
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [initialLoading, setInitialLoading] = useState<boolean>(true);
@@ -368,8 +371,23 @@ const App: React.FC = () => {
           </div>
           <div className="form-group">
             <label htmlFor="weight-input">Weight (optional):</label>
-            <input id="weight-input" type="number" value={weight} onChange={(e) => setWeight(e.target.value)}
-              placeholder="lbs / kg" min="0" step="0.5" />
+            <div className="weight-input-row">
+              <input id="weight-input" type="number" value={weight} onChange={(e) => setWeight(e.target.value)}
+                placeholder="e.g. 20" min="0" step="0.5" />
+              <select
+                className="unit-select"
+                value={weightUnit}
+                onChange={(e) => {
+                  const u = e.target.value as 'kg' | 'lbs';
+                  setWeightUnit(u);
+                  localStorage.setItem('fitness_weight_unit', u);
+                }}
+                aria-label="Weight unit"
+              >
+                <option value="kg">kg</option>
+                <option value="lbs">lbs</option>
+              </select>
+            </div>
           </div>
           <button className="btn btn-secondary" onClick={addSet} type="button">Add Set</button>
         </div>
@@ -379,7 +397,7 @@ const App: React.FC = () => {
             <h3>Sets to log:</h3>
             {pendingSets.map((set, i) => (
               <div key={i} className="set-row">
-                <span>Set {i + 1}: {set.reps} reps{set.weight !== undefined ? ` @ ${set.weight}` : ''}</span>
+                <span>Set {i + 1}: {set.reps} reps{set.weight !== undefined ? ` @ ${set.weight} ${weightUnit}` : ''}</span>
                 <button className="btn-remove" onClick={() => removeSet(i)} aria-label="Remove set">×</button>
               </div>
             ))}
@@ -429,7 +447,7 @@ const App: React.FC = () => {
                     <div className="analytics-stat">{v.totalReps} reps</div>
                     <div className="analytics-sub">{v.totalSets} {v.totalSets === 1 ? 'set' : 'sets'}</div>
                     {rec?.maxWeight !== null && rec?.maxWeight !== undefined && (
-                      <div className="analytics-sub">max {rec.maxWeight}</div>
+                      <div className="analytics-sub">max {rec.maxWeight} {weightUnit}</div>
                     )}
                   </div>
                 );
@@ -455,7 +473,7 @@ const App: React.FC = () => {
                     </div>
                     {rec.maxWeight !== null && (
                       <div className={`analytics-sub${newWeightRecord ? ' analytics-sub--record' : ''}`}>
-                        max {rec.maxWeight}
+                        max {rec.maxWeight} {weightUnit}
                       </div>
                     )}
                   </div>
@@ -472,7 +490,7 @@ const App: React.FC = () => {
               <strong>{getExerciseName(entry.exercise_id)}</strong>
               {entry.sets.map((set, j) => (
                 <div key={j} className="set-item">
-                  Set {j + 1}: {set.reps} reps{set.weight !== undefined ? ` @ ${set.weight}` : ''}
+                  Set {j + 1}: {set.reps} reps{set.weight !== undefined ? ` @ ${set.weight} ${weightUnit}` : ''}
                 </div>
               ))}
             </div>

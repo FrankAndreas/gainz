@@ -182,7 +182,7 @@ describe('App — day detail panel', () => {
     await renderApp();
     // Push-ups appears in both the analytics card and the day detail — use set items to verify the detail panel
     expect(await screen.findByText('Set 1: 10 reps')).toBeInTheDocument();
-    expect(await screen.findByText('Set 2: 8 reps @ 5')).toBeInTheDocument();
+    expect(await screen.findByText(/Set 2: 8 reps @ 5/)).toBeInTheDocument();
   });
 
   it('fetches a new day when a different pill is clicked', async () => {
@@ -413,7 +413,7 @@ describe('App — personal records panel', () => {
     setupRecordsMocks();
     await renderApp();
     await waitFor(() => {
-      expect(screen.getByText('max 15')).toBeInTheDocument();
+      expect(screen.getByText(/max 15/)).toBeInTheDocument();
     });
   });
 
