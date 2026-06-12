@@ -28,9 +28,11 @@ def _read_json(path: Path) -> dict:
 
 
 def _write_json(path: Path, data: dict) -> None:
+    tmp = Path(str(path) + ".tmp")
     with FileLock(str(path) + ".lock"):
-        with open(path, "w") as f:
+        with open(tmp, "w") as f:
             json.dump(data, f, indent=2)
+        os.replace(tmp, path)
 
 
 def _safe_user_id(user_id: str) -> str:
