@@ -19,6 +19,8 @@ frontend/dist/
 
 # Environment
 .env
+# NAS target for scripts/deploy-nas.sh
+.deploy.env
 .env.local
 .env.*.local
 

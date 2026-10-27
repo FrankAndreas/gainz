@@ -1,25 +1,35 @@
+# Stage 1: install runtime dependencies into a virtualenv
+FROM python:3.14-slim AS build
+
+ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
+RUN python -m venv /venv
+COPY backend/requirements.txt /tmp/requirements.txt
+# pip is only needed to install; keep the bytecode pip compiles (faster startup)
+RUN /venv/bin/pip install -r /tmp/requirements.txt \
+    && /venv/bin/pip uninstall -y pip
+
+# Stage 2: runtime image with only the interpreter, the virtualenv and the app
 FROM python:3.14-slim
 
+ENV PATH=/venv/bin:$PATH \
+    PYTHONPATH=/app \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# Non-root user (999:999), and the data folder mounted as a volume.
+# Compose can run the container as another user instead (PUID/PGID, see the README).
+RUN groupadd -r -g 999 appgroup && useradd -r -u 999 -g appgroup appuser && \
+    mkdir -p /app/backend/data && chown appuser:appgroup /app/backend/data
+
+COPY --from=build /venv /venv
+COPY backend/ /app/backend/
+# Precompile the app as well, since the runtime user doesn't write bytecode
+RUN python -m compileall -q /app/backend
+
 WORKDIR /app
-
-COPY backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt && \
-    apt-get update && apt-get install -y --no-install-recommends gosu && \
-    rm -rf /var/lib/apt/lists/*
-
-COPY backend/ ./backend/
-
-RUN adduser --disabled-password --gecos "" --uid 1001 appuser
-
-ENV PYTHONPATH=/app
+USER appuser
 
 EXPOSE 8000
 
-# entrypoint: ensure the data volume (mounted at runtime) is owned by appuser,
-# then exec the server as non-root. The chown is a no-op after first boot.
-COPY docker-entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
-
-ENTRYPOINT ["docker-entrypoint.sh"]
 # Single worker: correct for a low-RAM NAS. See mem_limit in docker-compose.prod.yml.
 CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

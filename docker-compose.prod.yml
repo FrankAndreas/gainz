@@ -1,20 +1,36 @@
+# Fitness Tracker on a NAS (or any Docker host), with the published images.
+# Copy it to the app folder on the NAS as compose.yaml; see "Deployment" in the README.
+#
+# The backend runs as PUID:PGID from .env (default 999:999, the image's own
+# user). On a Synology, use a DSM user's IDs (see the README). The ./data
+# folder must exist and belong to that user before the first start; it holds
+# all workout data.
+#
+# To try your local changes instead: docker compose -f docker-compose.prod.yml up -d --build
+
 services:
   backend:
     image: ghcr.io/frankandreas/gainz/fitness-backend:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: ${CONTAINER_PREFIX:-fitness}-backend
+    user: "${PUID:-999}:${PGID:-999}"
     restart: unless-stopped
     # Single uvicorn worker is intentional: correct for a low-RAM NAS and ≤10 concurrent users.
     # Do not raise mem_limit without also increasing --workers in Dockerfile.backend.
     mem_limit: 256m
     memswap_limit: 256m
     volumes:
-      - fitness-data:/app/backend/data
+      - ./data:/app/backend/data    # users, exercises, credentials and all workouts (JSON)
     environment:
-      - ALLOWED_ORIGIN=${ALLOWED_ORIGIN:-http://localhost}
-      # Required: generate with: python -c "import secrets; print(secrets.token_hex(32))"
-      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set}
-      # First-boot only: set initial passwords, then remove these lines.
-      # To change a password later:
-      #   docker compose exec backend python set_password.py <user_id> <new_password>
+      - TZ=${TZ:-Europe/Zurich}
+      # Signs login tokens; required, the backend doesn't start without it
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set in .env}
+      - JWT_EXPIRE_DAYS=${JWT_EXPIRE_DAYS:-30}
+      # First start only: passwords for user1 and user2. Remove them from .env afterwards;
+      # to change a password later:
+      #   sudo docker exec -it fitness-backend python backend/set_password.py <user_id> <new_password>
       - INITIAL_PASSWORD_user1=${INITIAL_PASSWORD_user1:-}
       - INITIAL_PASSWORD_user2=${INITIAL_PASSWORD_user2:-}
     healthcheck:
@@ -28,16 +44,18 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    networks:
-      - fitness-network
 
   frontend:
     image: ghcr.io/frankandreas/gainz/fitness-frontend:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: ${CONTAINER_PREFIX:-fitness}-frontend
     restart: unless-stopped
     mem_limit: 64m
     memswap_limit: 64m
     ports:
-      - "${PORT:-80}:80"
+      - "${PORT:-8083}:8080"
     depends_on:
       backend:
         condition: service_healthy
@@ -46,14 +64,3 @@ services:
       options:
         max-size: "5m"
         max-file: "2"
-    networks:
-      - fitness-network
-
-volumes:
-  fitness-data:
-    # Data lives at /volume1/docker/volumes/fitness-tracker_fitness-data/_data on Synology.
-    # Back it up with Hyper Backup or: tar -czf backup.tar.gz /volume1/docker/volumes/fitness-tracker_fitness-data
-
-networks:
-  fitness-network:
-    driver: bridge

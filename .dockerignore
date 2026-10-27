@@ -1,0 +1,10 @@
+# Keep local data, secrets and build artefacts out of the images
+**/data/
+**/__pycache__/
+**/node_modules/
+frontend/dist/
+venv/
+.venv/
+.git/
+.env
+.deploy.env

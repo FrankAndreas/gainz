@@ -89,15 +89,18 @@ gainz/
 │   ├── requirements.txt    # Python dependencies
 │   └── test_main.py        # pytest test suite (97 % coverage)
 ├── frontend/
-│   ├── public/
 │   ├── src/
 │   │   ├── App.tsx         # Main React component
 │   │   ├── App.test.tsx    # React Testing Library tests
 │   │   └── index.css       # Styles
 │   └── package.json
+├── scripts/
+│   ├── nas-update.sh       # Nightly auto-update on the NAS
+│   └── deploy-nas.sh       # Deploy from this machine over SSH
 ├── Dockerfile.backend
 ├── Dockerfile.frontend
-├── docker-compose.prod.yml # Production deployment
+├── docker-compose.prod.yml # NAS deployment (compose.yaml on the NAS)
+├── .env.example            # Settings for the NAS deployment
 ├── nginx.conf
 └── README.md
 ```
@@ -157,26 +160,98 @@ Returns dates within the range that have at least one logged workout.
 { "dates": ["2026-05-13", "2026-05-16"] }
 ```
 
-## Deployment (Synology NAS or any Docker host)
+## Deployment (Synology NAS)
 
-Images are built automatically by GitHub Actions on every push to `master` and pushed to the GitHub Container Registry.
+The app runs as two containers from images on GitHub Container Registry, built by GitHub Actions on
+every push to `master`:
 
-**First-time setup on the NAS:**
+- **backend** (`ghcr.io/frankandreas/gainz/fitness-backend`): the API; all data lives in `./data`
+- **frontend** (`ghcr.io/frankandreas/gainz/fitness-frontend`): nginx serving the app on port 8080
+  inside the container, forwarding `/api` to the backend
 
+It is set up like the other family apps (family-chore on 8080, family-budget on 8081, family-jobs on
+8082, spielzeugkiste on 8084), so this one uses **8083**.
+
+### Installation
+
+1. **Choose the user the app runs as.** Reuse the DSM user of the other family apps (e.g.
+   `familyapps`), or create one in **Control Panel → User & Group** with no application permissions.
+   Look up its IDs over SSH:
+   ```bash
+   id familyapps    # e.g. uid=1031(familyapps) gid=100(users)
+   ```
+2. **Prepare the folder.** Create `/volume1/docker/fitness-tracker` and upload `docker-compose.prod.yml`
+   into it **renamed to `compose.yaml`**. Then create the data folder, owned by the app's user:
+   ```bash
+   cd /volume1/docker/fitness-tracker
+   sudo mkdir -p data
+   sudo chown -R 1031:100 data    # the IDs from step 1
+   ```
+3. **Create `.env`** (all settings are explained in `.env.example`), with the first passwords of
+   `user1` and `user2`:
+   ```bash
+   printf 'PUID=1031\nPGID=100\nPORT=8083\nTZ=Europe/Zurich\nJWT_SECRET=%s\nINITIAL_PASSWORD_user1=...\nINITIAL_PASSWORD_user2=...\n' \
+     "$(openssl rand -hex 32)" | sudo tee .env
+   sudo chmod 600 .env
+   ```
+4. **Start** it:
+   ```bash
+   sudo docker-compose pull
+   sudo docker-compose up -d
+   ```
+5. **Open** `http://<NAS_IP>:8083` and log in as `user1` or `user2`.
+6. **Remove the two `INITIAL_PASSWORD_*` lines from `.env`.** They are only read on the first start.
+   To change a password later:
+   ```bash
+   sudo docker exec -it fitness-backend python backend/set_password.py user1 'new password'
+   ```
+
+### Where the data is
+
+Everything is in `data/` as JSON files (see [Data Storage](#data-storage)), plus `credentials.json`
+with the password hashes. Include `data/` in your Hyper Backup task.
+
+### Automatic updates
+
+`scripts/nas-update.sh` checks for new images and installs them, the same way as in the other family
+apps:
+- it pulls the images
+- if there is a new one, it archives `data/` to `data-backups/`, keeps the old images as `:previous`
+  and restarts the app
+- it waits until the backend is healthy, logging to `logs/update.log`
+
+1. Copy `scripts/nas-update.sh` into `/volume1/docker/fitness-tracker` and make it executable (or let
+   `scripts/deploy-nas.sh` upload it):
+   ```bash
+   sudo chmod +x /volume1/docker/fitness-tracker/nas-update.sh
+   sudo /volume1/docker/fitness-tracker/nas-update.sh     # should end with "Up to date" or "Update complete"
+   ```
+2. In **Control Panel → Task Scheduler → Create → Scheduled Task → User-defined script**:
+   - user **root**
+   - daily, a few minutes apart from the other apps' updates (e.g. 04:15)
+   - command `bash /volume1/docker/fitness-tracker/nas-update.sh`
+
+If the images are private, log in to the registry once as root:
+`sudo docker login ghcr.io -u <github-user>` with a token that has `read:packages`.
+
+To deploy right away from your computer:
 ```bash
-export ALLOWED_ORIGIN=http://your-nas-ip   # or your domain
-
-docker compose -f docker-compose.prod.yml up -d
+cp .deploy.env.example .deploy.env   # once; then set NAS_HOST and NAS_DIR
+scripts/deploy-nas.sh
 ```
 
-**Updating to the latest image:**
+### Rolling back
 
+Before each update the running images are tagged `:previous`. To go back:
 ```bash
-docker compose -f docker-compose.prod.yml pull
-docker compose -f docker-compose.prod.yml up -d
+cd /volume1/docker/fitness-tracker
+sudo docker tag ghcr.io/frankandreas/gainz/fitness-backend:previous ghcr.io/frankandreas/gainz/fitness-backend:latest
+sudo docker tag ghcr.io/frankandreas/gainz/fitness-frontend:previous ghcr.io/frankandreas/gainz/fitness-frontend:latest
+sudo docker-compose up -d
 ```
-
-Workout data is stored in the `fitness-data` named volume and survives container updates.
+If the new version changed the data, restore the matching archive from `data-backups/` first
+(`sudo tar -xzf data-backups/data-<date>.tar.gz`, with the app stopped). Pause the scheduled task
+until a fixed version is published, or it installs the new one again the next night.
 
 ## Development
 
@@ -219,3 +294,8 @@ cd frontend && npm test
 **Frontend not loading** — check port 3000 is free; run `npm install` inside `frontend/`.
 
 **Data not saving** — check write permissions on the `data/` directory.
+
+**Backend not starting on the NAS** — `sudo docker logs fitness-backend`. `PermissionError` on `data`: the folder
+must belong to `PUID:PGID` from `.env` (`sudo chown -R <PUID>:<PGID> data`). `JWT_SECRET must be set`: add it to `.env`.
+
+**Everyone is logged out after an update** — `JWT_SECRET` changed in `.env`.
