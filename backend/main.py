@@ -184,7 +184,7 @@ def initialize_data() -> None:
         initial_creds: dict[str, str] = {}
         for key, value in os.environ.items():
             if key.startswith("INITIAL_PASSWORD_") and value:
-                user_id = key[len("INITIAL_PASSWORD_"):]
+                user_id = key[len("INITIAL_PASSWORD_") :]
                 if _USER_ID_RE.fullmatch(user_id):
                     initial_creds[user_id] = pwd_context.hash(value)
         if initial_creds:
@@ -302,11 +302,16 @@ async def login(request: LoginRequest):
     stored_hash = creds.get(request.user_id)
     if not stored_hash or not pwd_context.verify(request.password, stored_hash):
         raise _AUTH_ERROR
-    return {"access_token": create_access_token(request.user_id), "token_type": "bearer"}
+    return {
+        "access_token": create_access_token(request.user_id),
+        "token_type": "bearer",
+    }
 
 
 @app.post("/workouts")
-async def log_workout(entry: WorkoutEntry, current_user: str = Depends(get_current_user)):
+async def log_workout(
+    entry: WorkoutEntry, current_user: str = Depends(get_current_user)
+):
     _assert_own_resource(current_user, entry.user_id)
 
     try:
