@@ -1,10 +1,17 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import axios from 'axios';
 import LoginPage from './LoginPage';
+import {
+  API_URL,
+  fetchActiveDates,
+  fetchAllTimeRecords,
+  fetchDayWorkout,
+  fetchUsersAndExercises,
+  fetchWeekWorkouts,
+} from './api';
+import type { Exercise, User } from './api';
 import { today, getWeekDates, computeWeeklyVolume, computeWeeklyRecords } from './workoutStats';
 import type { AllTimeRecord, WorkoutData, WorkoutSet } from './workoutStats';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 // ── Token helpers ─────────────────────────────────────────────────────────────
 
@@ -38,22 +45,6 @@ function getUserIdFromToken(token: string): string | null {
   return parseTokenPayload(token)?.sub ?? null;
 }
 
-// ── Interfaces ────────────────────────────────────────────────────────────────
-
-interface User {
-  id: string;
-  name: string;
-  created: string;
-}
-
-interface Exercise {
-  id: string;
-  name: string;
-  category: string;
-  muscle_groups: string[];
-  unit?: string;
-}
-
 // ── Component ─────────────────────────────────────────────────────────────────
 
 const App: React.FC = () => {
@@ -83,6 +74,8 @@ const App: React.FC = () => {
   const [weekWorkouts, setWeekWorkouts] = useState<WorkoutData[]>([]);
   const [allTimeRecords, setAllTimeRecords] = useState<AllTimeRecord[]>([]);
   const [lastRemovedSet, setLastRemovedSet] = useState<{ set: WorkoutSet; index: number } | null>(null);
+  // Bumped after logging a workout, so the effects below reload the workout data
+  const [dataVersion, setDataVersion] = useState<number>(0);
 
   // Derived from token — no separate state needed
   const currentUserId = useMemo(
@@ -103,72 +96,19 @@ const App: React.FC = () => {
   const weeklyVolume = useMemo(() => computeWeeklyVolume(weekWorkouts), [weekWorkouts]);
   const weeklyRecords = useMemo(() => computeWeeklyRecords(weekWorkouts), [weekWorkouts]);
 
-  const showMessage = (text: string, isError = false) => {
+  const showMessage = useCallback((text: string, isError = false) => {
     setMessage({ text, isError });
     setTimeout(() => setMessage(null), 4000);
-  };
+  }, []);
 
-  const handleLogin = (token: string) => setAuthToken(token);
+  const handleLogin = (token: string) => {
+    setInitialLoading(true);
+    setAuthToken(token);
+  };
 
   const handleLogout = () => {
     clearStoredToken();
     setAuthToken(null);
-  };
-
-  const loadInitialData = async () => {
-    setInitialLoading(true);
-    try {
-      const [usersRes, exercisesRes] = await Promise.all([
-        axios.get(`${API_URL}/users`),
-        axios.get(`${API_URL}/exercises`),
-      ]);
-      setUsers(usersRes.data.users);
-      setExercises(exercisesRes.data);
-    } catch {
-      showMessage('Error loading data. Make sure the backend is running.', true);
-    } finally {
-      setInitialLoading(false);
-    }
-  };
-
-  const fetchWeekActiveDates = async (userId: string, weekDts: string[]) => {
-    try {
-      const res = await axios.get(`${API_URL}/workouts`, {
-        params: { user_id: userId, date_from: weekDts[0], date_to: weekDts[6] },
-      });
-      setActiveDates(new Set(res.data.dates));
-    } catch { /* non-critical */ }
-  };
-
-  const fetchWeekWorkouts = async (userId: string, weekDts: string[]) => {
-    try {
-      const results = await Promise.all(
-        weekDts.map(date =>
-          axios.get(`${API_URL}/workouts/${date}`, { params: { user_id: userId } })
-        )
-      );
-      setWeekWorkouts(results.map(r => r.data));
-    } catch { /* non-critical */ }
-  };
-
-  const fetchAllTimeRecords = async (userId: string) => {
-    try {
-      const res = await axios.get(`${API_URL}/records`, { params: { user_id: userId } });
-      setAllTimeRecords(
-        res.data.records.map((r: { exercise_id: string; max_reps: number; max_weight: number | null }) => ({
-          exerciseId: r.exercise_id,
-          maxReps: r.max_reps,
-          maxWeight: r.max_weight,
-        }))
-      );
-    } catch { /* non-critical */ }
-  };
-
-  const fetchDayWorkout = async (userId: string, date: string) => {
-    try {
-      const res = await axios.get(`${API_URL}/workouts/${date}`, { params: { user_id: userId } });
-      setHistoryWorkout(res.data);
-    } catch { /* non-critical */ }
   };
 
   // Attach axios interceptors once; clean up on unmount
@@ -194,30 +134,61 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // The load functions below fetch from the API and set state once the response arrives;
-  // the React Compiler rule can't see that and reports them as synchronous setState.
-  // eslint-disable-next-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
-  useEffect(() => { if (authToken) loadInitialData(); }, [authToken]);
+  // Each effect drops responses that arrive after its inputs changed (or the component
+  // unmounted), so a slow answer for a previous week or day can't overwrite the current one.
+  useEffect(() => {
+    if (!authToken) return;
+    let current = true;
+    fetchUsersAndExercises()
+      .then(({ users, exercises }) => {
+        if (!current) return;
+        setUsers(users);
+        setExercises(exercises);
+      })
+      .catch(() => {
+        if (current) showMessage('Error loading data. Make sure the backend is running.', true);
+      })
+      .finally(() => {
+        if (current) setInitialLoading(false);
+      });
+    return () => { current = false; };
+  }, [authToken, showMessage]);
 
+  // The remaining data is non-critical: on failure the previous values stay
   useEffect(() => {
     if (!currentUserId) return;
+    let current = true;
     const dates = getWeekDates(weekOffset);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchWeekActiveDates(currentUserId, dates);
-    fetchWeekWorkouts(currentUserId, dates);
-  }, [currentUserId, weekOffset]);
+    fetchActiveDates(currentUserId, dates).then(
+      (active) => { if (current) setActiveDates(active); },
+      () => {},
+    );
+    fetchWeekWorkouts(currentUserId, dates).then(
+      (workouts) => { if (current) setWeekWorkouts(workouts); },
+      () => {},
+    );
+    return () => { current = false; };
+  }, [currentUserId, weekOffset, dataVersion]);
 
   useEffect(() => {
     if (!currentUserId) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchAllTimeRecords(currentUserId);
-  }, [currentUserId]);
+    let current = true;
+    fetchAllTimeRecords(currentUserId).then(
+      (records) => { if (current) setAllTimeRecords(records); },
+      () => {},
+    );
+    return () => { current = false; };
+  }, [currentUserId, dataVersion]);
 
   useEffect(() => {
     if (!currentUserId) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchDayWorkout(currentUserId, selectedDate);
-  }, [currentUserId, selectedDate]);
+    let current = true;
+    fetchDayWorkout(currentUserId, selectedDate).then(
+      (workout) => { if (current) setHistoryWorkout(workout); },
+      () => {},
+    );
+    return () => { current = false; };
+  }, [currentUserId, selectedDate, dataVersion]);
 
   const addSet = () => {
     if (!selectedExercise) { showMessage('Please select an exercise', true); return; }
@@ -264,11 +235,7 @@ const App: React.FC = () => {
       showMessage('Workout logged successfully!');
       setSelectedExercise('');
       setPendingSets([]);
-      const wDates = getWeekDates(weekOffset);
-      fetchWeekActiveDates(currentUserId, wDates);
-      fetchWeekWorkouts(currentUserId, wDates);
-      fetchDayWorkout(currentUserId, selectedDate);
-      fetchAllTimeRecords(currentUserId);
+      setDataVersion(v => v + 1);
     } catch {
       showMessage('Error logging workout', true);
     } finally {

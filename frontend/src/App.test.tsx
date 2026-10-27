@@ -1,6 +1,7 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axios from 'axios';
+import type { AxiosRequestConfig } from 'axios';
 import type { Mocked } from 'vitest';
 
 import App from './App';
@@ -140,6 +141,12 @@ describe('App — initial render', () => {
     expect(activeButton).toHaveTextContent(todayWeekday);
   });
 
+  it('shows an error instead of the spinner when the backend is unreachable', async () => {
+    mockedAxios.get.mockRejectedValue(new Error('Network Error'));
+    await renderApp();
+    expect(await screen.findByText(/Error loading data/)).toBeInTheDocument();
+  });
+
   it('shows empty-state text when no workouts are logged', async () => {
     await renderApp();
     await waitFor(() => {
@@ -227,6 +234,40 @@ describe('App — week navigation', () => {
       const listCalls = mockedAxios.get.mock.calls.filter(([url]) => url.includes('/workouts') && !/\/workouts\/\d{4}/.test(url));
       expect(listCalls.length).toBeGreaterThanOrEqual(2);
     });
+  });
+
+  it('ignores a late answer for the week that was navigated away from', async () => {
+    const thisWeek = getWeekDates(0);
+    const prevWeek = getWeekDates(-1);
+    let answerThisWeek: (response: unknown) => void = () => {};
+    mockedAxios.get.mockImplementation((url: string, config?: AxiosRequestConfig) => {
+      if (url.includes('/users')) return Promise.resolve({ data: USERS_RESPONSE });
+      if (url.includes('/exercises')) return Promise.resolve({ data: EXERCISES_RESPONSE });
+      if (/\/workouts\/\d{4}-\d{2}-\d{2}/.test(url)) return Promise.resolve({ data: EMPTY_WORKOUT });
+      if (url.includes('/records')) return Promise.resolve({ data: { records: [] } });
+      if (url.includes('/workouts')) {
+        // This week's answer is held back until after the user has moved on
+        if (config?.params?.date_from === thisWeek[0]) {
+          return new Promise(resolve => { answerThisWeek = resolve; });
+        }
+        return Promise.resolve({ data: { dates: [] } });
+      }
+      return Promise.reject(new Error(`Unexpected GET: ${url}`));
+    });
+
+    await renderApp();
+    await userEvent.click(screen.getByRole('button', { name: /previous week/i }));
+    await waitFor(() => {
+      const prevWeekCalls = mockedAxios.get.mock.calls.filter(
+        ([url, config]) => url.endsWith('/workouts')
+          && (config as AxiosRequestConfig | undefined)?.params?.date_from === prevWeek[0],
+      );
+      expect(prevWeekCalls.length).toBe(1);
+    });
+
+    // The stale answer marks a day of the week now shown; it must be dropped
+    await act(async () => { answerThisWeek({ data: { dates: [prevWeek[0]] } }); });
+    expect(screen.queryByRole('img', { name: 'has workouts' })).not.toBeInTheDocument();
   });
 });
 
