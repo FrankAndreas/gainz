@@ -321,7 +321,7 @@ const App: React.FC = () => {
             <h3>Sets to log:</h3>
             {pendingSets.map((set, i) => (
               <div key={i} className="set-row">
-                <span>Set {i + 1}: {set.reps} {selectedExerciseUnit}{set.weight !== undefined ? ` @ ${set.weight} ${weightUnit}` : ''}</span>
+                <span>Set {i + 1}: {set.reps} {selectedExerciseUnit}{set.weight != null ? ` @ ${set.weight} ${weightUnit}` : ''}</span>
                 <button className="btn-remove" onClick={() => removeSet(i)} aria-label="Remove set">×</button>
               </div>
             ))}
@@ -421,7 +421,7 @@ const App: React.FC = () => {
               <strong>{getExerciseName(entry.exercise_id)}</strong>
               {entry.sets.map((set, j) => (
                 <div key={j} className="set-item">
-                  Set {j + 1}: {set.reps} {getExerciseUnit(entry.exercise_id)}{set.weight !== undefined ? ` @ ${set.weight} ${weightUnit}` : ''}
+                  Set {j + 1}: {set.reps} {getExerciseUnit(entry.exercise_id)}{set.weight != null ? ` @ ${set.weight} ${weightUnit}` : ''}
                 </div>
               ))}
             </div>

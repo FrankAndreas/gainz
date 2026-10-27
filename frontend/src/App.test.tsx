@@ -194,6 +194,25 @@ describe('App — day detail panel', () => {
     expect(await screen.findByText(/Set 2: 8 reps @ 5/)).toBeInTheDocument();
   });
 
+  it('shows no weight for sets the API returns with weight: null', async () => {
+    // The backend stores and returns "weight": null for sets logged without weight
+    const workout = {
+      date: today(),
+      exercises: [{ exercise_id: 'pushups', sets: [{ reps: 12, weight: null }], timestamp: '2026-05-16T10:00:00' }],
+    };
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url.includes('/users')) return Promise.resolve({ data: USERS_RESPONSE });
+      if (url.includes('/exercises')) return Promise.resolve({ data: EXERCISES_RESPONSE });
+      if (/\/workouts\/\d{4}-\d{2}-\d{2}/.test(url)) return Promise.resolve({ data: workout });
+      if (url.includes('/workouts')) return Promise.resolve({ data: { dates: [] } });
+      return Promise.reject(new Error(`Unexpected GET: ${url}`));
+    });
+
+    await renderApp();
+    expect(await screen.findByText('Set 1: 12 reps')).toBeInTheDocument();
+    expect(screen.queryByText(/null/)).not.toBeInTheDocument();
+  });
+
   it('fetches a new day when a different pill is clicked', async () => {
     await renderApp();
 
@@ -370,6 +389,14 @@ describe('computeWeeklyRecords()', () => {
     const result = computeWeeklyRecords(WEEK_WITH_DATA);
     const squats = result.find(r => r.exerciseId === 'squats')!;
     expect(squats.maxWeight).toBeNull();
+  });
+
+  it('treats weight: null from the API as no weight, not 0 kg', () => {
+    const week: WorkoutData[] = [{
+      date: '2026-05-11',
+      exercises: [{ exercise_id: 'pushups', sets: [{ reps: 15, weight: null }], timestamp: '2026-05-11T08:00:00' }],
+    }];
+    expect(computeWeeklyRecords(week)[0].maxWeight).toBeNull();
   });
 
   it('returns empty array for an empty week', () => {

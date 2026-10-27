@@ -2,7 +2,8 @@
 
 export interface WorkoutSet {
   reps: number;
-  weight?: number;
+  // The API sends null for sets without weight
+  weight?: number | null;
 }
 
 export interface WorkoutExercise {
@@ -70,7 +71,7 @@ export function computeWeeklyRecords(weekWorkouts: WorkoutData[]): ExerciseRecor
       const cur = map.get(entry.exercise_id) ?? { maxReps: 0, maxWeight: null };
       for (const set of entry.sets) {
         cur.maxReps = Math.max(cur.maxReps, set.reps);
-        if (set.weight !== undefined) {
+        if (set.weight != null) {
           cur.maxWeight = Math.max(cur.maxWeight ?? 0, set.weight);
         }
       }
