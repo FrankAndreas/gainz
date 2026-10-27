@@ -3,10 +3,8 @@ uvicorn[standard]==0.54.0
 pydantic==2.14.1
 python-multipart==0.0.32
 filelock==4.2.4
-passlib[bcrypt]==1.7.4
-# passlib is unmaintained and breaks with bcrypt >= 4.1
-bcrypt==4.0.1
-python-jose[cryptography]==3.5.0
+bcrypt==5.0.0
+PyJWT==2.15.1
 
 # dev / test
 pytest==9.1.1

@@ -7,7 +7,12 @@ from pathlib import Path
 # regardless of the working directory the script is invoked from.
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from backend.main import _USER_ID_RE, _read_credentials, _write_credentials, pwd_context  # noqa: E402
+from backend.main import (
+    _USER_ID_RE,
+    _read_credentials,
+    _write_credentials,
+    hash_password,
+)  # noqa: E402
 
 
 def main() -> None:
@@ -24,7 +29,7 @@ def main() -> None:
 
     try:
         credentials = _read_credentials()
-        credentials[user_id] = pwd_context.hash(new_password)
+        credentials[user_id] = hash_password(new_password)
         _write_credentials(credentials)
         print(f"Password for '{user_id}' updated successfully.")
     except Exception as e:

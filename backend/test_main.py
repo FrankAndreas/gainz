@@ -5,9 +5,9 @@ from datetime import timedelta
 from unittest.mock import patch
 from fastapi.testclient import TestClient
 
+import jwt
 from backend.main import app
-from jose import jwt as jose_jwt
-from backend.main import create_access_token, pwd_context
+from backend.main import create_access_token, hash_password, verify_password
 
 
 @pytest.fixture(autouse=True)
@@ -36,10 +36,51 @@ class TestJWT:
 
     def test_token_payload_contains_correct_subject(self):
         token = create_access_token("user1")
-        payload = jose_jwt.decode(
+        payload = jwt.decode(
             token, "test-secret-key-for-tests-only", algorithms=["HS256"]
         )
         assert payload["sub"] == "user1"
+
+    def test_token_signed_with_other_key_rejected(self):
+        token = jwt.encode(
+            {"sub": "user1"}, "some-other-key-of-sufficient-length", algorithm="HS256"
+        )
+        r = client.get("/exercises", headers={"Authorization": f"Bearer {token}"})
+        assert r.status_code == 401
+
+    def test_unsigned_token_rejected(self):
+        token = jwt.encode({"sub": "user1"}, None, algorithm="none")
+        r = client.get("/exercises", headers={"Authorization": f"Bearer {token}"})
+        assert r.status_code == 401
+
+    def test_expired_token_rejected(self):
+        token = create_access_token("user1", expires_delta=timedelta(seconds=-1))
+        r = client.get("/exercises", headers={"Authorization": f"Bearer {token}"})
+        assert r.status_code == 401
+
+
+class TestPasswordHashing:
+    # Written by passlib's CryptContext(schemes=["bcrypt"]) before passlib was removed
+    PASSLIB_HASH = "$2b$12$obORqWjY5JZCiZYMCQaNcel6.pF28UoXsKC9Zm33L.vL7UJtxOPom"
+
+    def test_round_trip(self):
+        password_hash = hash_password("secret1")
+        assert verify_password("secret1", password_hash)
+        assert not verify_password("secret2", password_hash)
+
+    def test_hash_written_by_passlib_still_verifies(self):
+        assert verify_password("legacy-password", self.PASSLIB_HASH)
+        assert not verify_password("wrong", self.PASSLIB_HASH)
+
+    def test_password_over_72_bytes_fails_verification(self):
+        assert not verify_password("x" * 73, self.PASSLIB_HASH)
+
+    def test_password_over_72_bytes_cannot_be_hashed(self):
+        with pytest.raises(ValueError, match="72 bytes"):
+            hash_password("x" * 73)
+
+    def test_invalid_stored_hash_fails_verification(self):
+        assert not verify_password("secret1", "not-a-bcrypt-hash")
 
 
 def test_root():
@@ -481,8 +522,9 @@ def with_credentials(monkeypatch, tmp_path):
     m.initialize_data()
     m._write_credentials(
         {
-            "user1": pwd_context.hash("password1"),
-            "user2": pwd_context.hash("password2"),
+            "user1": hash_password("password1"),
+            "user2": hash_password("password2"),
+            "user3": "not-a-bcrypt-hash",
         }
     )
 
@@ -513,10 +555,18 @@ class TestLogin:
     def test_token_contains_correct_user_id(self, with_credentials):
         r = client.post("/login", json={"user_id": "user1", "password": "password1"})
         token = r.json()["access_token"]
-        payload = jose_jwt.decode(
+        payload = jwt.decode(
             token, "test-secret-key-for-tests-only", algorithms=["HS256"]
         )
         assert payload["sub"] == "user1"
+
+    def test_password_over_72_bytes_returns_401(self, with_credentials):
+        r = client.post("/login", json={"user_id": "user1", "password": "x" * 73})
+        assert r.status_code == 401
+
+    def test_invalid_stored_hash_returns_401(self, with_credentials):
+        r = client.post("/login", json={"user_id": "user3", "password": "anything"})
+        assert r.status_code == 401
 
 
 class TestAuthEnforcement:
@@ -617,8 +667,8 @@ class TestCredentialInit:
         creds = m._read_credentials()
         assert "user1" in creds
         assert "user2" in creds
-        assert pwd_context.verify("secret1", creds["user1"])
-        assert pwd_context.verify("secret2", creds["user2"])
+        assert verify_password("secret1", creds["user1"])
+        assert verify_password("secret2", creds["user2"])
 
     def test_does_not_overwrite_existing_credentials(self, tmp_path, monkeypatch):
         import backend.main as m
