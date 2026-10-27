@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    branches: [main]
   pull_request:
-    branches: [master]
+    branches: [main]
 
 env:
   REGISTRY: ghcr.io
@@ -51,8 +51,8 @@ jobs:
   build-and-push:
     needs: [test-backend, test-frontend]
     runs-on: ubuntu-latest
-    # Only push images on pushes to master (not on PRs)
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    # Only push images on pushes to main (not on PRs)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
       packages: write

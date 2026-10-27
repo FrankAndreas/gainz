@@ -163,7 +163,7 @@ Returns dates within the range that have at least one logged workout.
 ## Deployment (Synology NAS)
 
 The app runs as two containers from images on GitHub Container Registry, built by GitHub Actions on
-every push to `master`:
+every push to `main`:
 
 - **backend** (`ghcr.io/frankandreas/gainz/fitness-backend`): the API; all data lives in `./data`
 - **frontend** (`ghcr.io/frankandreas/gainz/fitness-frontend`): nginx serving the app on port 8080

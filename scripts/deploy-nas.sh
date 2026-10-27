@@ -91,8 +91,8 @@ nas_sudo() {
 }
 
 if ! git diff --quiet HEAD -- scripts/nas-update.sh \
-    || [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/master 2>/dev/null)" ]; then
-    echo "Note: deploying files that differ from origin/master (uncommitted changes or another branch)."
+    || [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main 2>/dev/null)" ]; then
+    echo "Note: deploying files that differ from origin/main (uncommitted changes or another branch)."
     confirm "Continue anyway?" || exit 1
 fi
 
