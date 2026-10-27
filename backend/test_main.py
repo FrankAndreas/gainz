@@ -525,6 +525,7 @@ def with_credentials(monkeypatch, tmp_path):
             "user1": hash_password("password1"),
             "user2": hash_password("password2"),
             "user3": "not-a-bcrypt-hash",
+            "legacy": TestPasswordHashing.PASSLIB_HASH,
         }
     )
 
@@ -567,6 +568,15 @@ class TestLogin:
     def test_invalid_stored_hash_returns_401(self, with_credentials):
         r = client.post("/login", json={"user_id": "user3", "password": "anything"})
         assert r.status_code == 401
+
+    def test_hash_written_by_passlib_logs_in(self, with_credentials):
+        r = client.post(
+            "/login", json={"user_id": "legacy", "password": "legacy-password"}
+        )
+        assert r.status_code == 200
+        token = r.json()["access_token"]
+        r = client.get("/exercises", headers={"Authorization": f"Bearer {token}"})
+        assert r.status_code == 200
 
 
 class TestAuthEnforcement:
@@ -689,6 +699,76 @@ class TestCredentialInit:
         m.DATA_DIR = tmp_path
         m.initialize_data()
         assert not m._credentials_path().exists()
+
+    def test_initial_password_over_72_bytes_fails_clearly(self, tmp_path, monkeypatch):
+        import backend.main as m
+
+        monkeypatch.setenv("JWT_SECRET", "test-secret")
+        monkeypatch.setenv("INITIAL_PASSWORD_user1", "x" * 73)
+        m.DATA_DIR = tmp_path
+        with pytest.raises(ValueError, match="72 bytes"):
+            m.initialize_data()
+        assert not m._credentials_path().exists()
+
+
+class TestSetPasswordScript:
+    """backend/set_password.py, the CLI for setting or changing a password."""
+
+    def run(self, monkeypatch, *args: str) -> None:
+        from backend import set_password
+
+        monkeypatch.setattr("sys.argv", ["set_password.py", *args])
+        set_password.main()
+
+    def test_new_password_logs_in(self, monkeypatch):
+        self.run(monkeypatch, "user1", "neues-Passwort-1")
+        r = client.post(
+            "/login", json={"user_id": "user1", "password": "neues-Passwort-1"}
+        )
+        assert r.status_code == 200
+        token = r.json()["access_token"]
+        r = client.get("/exercises", headers={"Authorization": f"Bearer {token}"})
+        assert r.status_code == 200
+
+    def test_replaces_old_password(self, with_credentials, monkeypatch):
+        self.run(monkeypatch, "user1", "replacement")
+        old = client.post("/login", json={"user_id": "user1", "password": "password1"})
+        new = client.post(
+            "/login", json={"user_id": "user1", "password": "replacement"}
+        )
+        assert old.status_code == 401
+        assert new.status_code == 200
+
+    def test_keeps_other_users(self, with_credentials, monkeypatch):
+        self.run(monkeypatch, "user1", "replacement")
+        r = client.post("/login", json={"user_id": "user2", "password": "password2"})
+        assert r.status_code == 200
+
+    def test_password_over_72_bytes_rejected(
+        self, with_credentials, monkeypatch, capsys
+    ):
+        import backend.main as m
+
+        before = m._read_credentials()
+        with pytest.raises(SystemExit) as exc:
+            self.run(monkeypatch, "user1", "x" * 73)
+        assert exc.value.code == 1
+        assert "72 bytes" in capsys.readouterr().err
+        assert m._read_credentials() == before
+
+    def test_invalid_user_id_rejected(self, monkeypatch):
+        import backend.main as m
+
+        with pytest.raises(SystemExit) as exc:
+            self.run(monkeypatch, "../evil", "password")
+        assert exc.value.code == 1
+        assert not m._credentials_path().exists()
+
+    def test_wrong_argument_count_shows_usage(self, monkeypatch, capsys):
+        with pytest.raises(SystemExit) as exc:
+            self.run(monkeypatch, "user1")
+        assert exc.value.code == 1
+        assert "Usage" in capsys.readouterr().out
 
 
 class TestErrorHandling:
