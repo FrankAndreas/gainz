@@ -10,10 +10,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from contextlib import asynccontextmanager
 from filelock import FileLock
-from jose import JWTError, jwt
-from passlib.context import CryptContext
+import bcrypt
+import jwt
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 DATA_DIR = Path(__file__).parent / "data"
@@ -81,6 +80,27 @@ def _write_credentials(data: dict) -> None:
         os.replace(tmp, path)
 
 
+# Passwords are hashed with bcrypt directly (passlib is unmaintained and breaks with bcrypt 5).
+# The hash format is unchanged, so hashes written by passlib keep working.
+_BCRYPT_MAX_BYTES = 72
+
+
+def hash_password(password: str) -> str:
+    if len(password.encode()) > _BCRYPT_MAX_BYTES:
+        raise ValueError(
+            f"Password is longer than {_BCRYPT_MAX_BYTES} bytes, bcrypt's limit"
+        )
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    try:
+        return bcrypt.checkpw(password.encode(), password_hash.encode())
+    except ValueError:
+        # Over bcrypt's 72-byte limit, or not a bcrypt hash: a failed login, not a server error
+        return False
+
+
 def _jwt_secret() -> str:
     secret = os.getenv("JWT_SECRET")
     if not secret:
@@ -109,7 +129,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> str:
         user_id: str | None = payload.get("sub")
         if not user_id:
             raise exc
-    except JWTError:
+    except jwt.PyJWTError:
         raise exc
     return user_id
 
@@ -184,9 +204,9 @@ def initialize_data() -> None:
         initial_creds: dict[str, str] = {}
         for key, value in os.environ.items():
             if key.startswith("INITIAL_PASSWORD_") and value:
-                user_id = key[len("INITIAL_PASSWORD_"):]
+                user_id = key[len("INITIAL_PASSWORD_") :]
                 if _USER_ID_RE.fullmatch(user_id):
-                    initial_creds[user_id] = pwd_context.hash(value)
+                    initial_creds[user_id] = hash_password(value)
         if initial_creds:
             _write_credentials(initial_creds)
 
@@ -300,13 +320,18 @@ _AUTH_ERROR = HTTPException(
 async def login(request: LoginRequest):
     creds = _read_credentials()
     stored_hash = creds.get(request.user_id)
-    if not stored_hash or not pwd_context.verify(request.password, stored_hash):
+    if not stored_hash or not verify_password(request.password, stored_hash):
         raise _AUTH_ERROR
-    return {"access_token": create_access_token(request.user_id), "token_type": "bearer"}
+    return {
+        "access_token": create_access_token(request.user_id),
+        "token_type": "bearer",
+    }
 
 
 @app.post("/workouts")
-async def log_workout(entry: WorkoutEntry, current_user: str = Depends(get_current_user)):
+async def log_workout(
+    entry: WorkoutEntry, current_user: str = Depends(get_current_user)
+):
     _assert_own_resource(current_user, entry.user_id)
 
     try:
