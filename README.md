@@ -202,14 +202,14 @@ pre-commit run --all-files
 python -m pytest backend/test_main.py --cov=backend.main -v
 
 # Frontend
-cd frontend && npm test -- --watchAll=false
+cd frontend && npm test
 ```
 
 ### Environment variables
 
 | Variable | Default | Description |
 |---|---|---|
-| `REACT_APP_API_URL` | `http://localhost:8000` | Backend URL used by the frontend |
+| `VITE_API_URL` | `http://localhost:8000` | Backend URL used by the frontend (read at build time) |
 | `ALLOWED_ORIGIN` | `http://localhost:3000` | CORS origin allowed by the backend |
 
 ## Troubleshooting

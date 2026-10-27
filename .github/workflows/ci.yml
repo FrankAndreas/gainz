@@ -33,18 +33,20 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: "18"
+          node-version: "26"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - run: npm ci --prefix frontend --ignore-scripts --legacy-peer-deps
+      - run: npm ci --prefix frontend --ignore-scripts
 
-      # audit-level=critical: the "high" findings are unfixable transitive deps
-      # of react-scripts (webpack, jest, svgo). None affect the production bundle.
-      # Migrate to Vite to clean this up permanently.
-      - run: npm audit --prefix frontend --audit-level=critical
+      - run: npm audit --prefix frontend --audit-level=high
 
-      - run: npm test --prefix frontend -- --watchAll=false --ci
+      - run: npm run --prefix frontend lint
+
+      - run: npm test --prefix frontend
+
+      # Type-checks and builds the bundle the frontend image ships
+      - run: npm run --prefix frontend build
 
   build-and-push:
     needs: [test-backend, test-frontend]

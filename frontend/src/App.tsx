@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import LoginPage from './LoginPage';
+import { today, getWeekDates, computeWeeklyVolume, computeWeeklyRecords } from './workoutStats';
+import type { AllTimeRecord, WorkoutData, WorkoutSet } from './workoutStats';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 // ── Token helpers ─────────────────────────────────────────────────────────────
 
@@ -36,70 +38,6 @@ function getUserIdFromToken(token: string): string | null {
   return parseTokenPayload(token)?.sub ?? null;
 }
 
-// ── Pure helpers (exported for unit tests) ────────────────────────────────────
-
-export function today(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-export function getWeekDates(offset: number): string[] {
-  const d = new Date();
-  d.setDate(d.getDate() - ((d.getDay() + 6) % 7) + offset * 7);
-  return Array.from({ length: 7 }, (_, i) => {
-    const day = new Date(d);
-    day.setDate(d.getDate() + i);
-    return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
-  });
-}
-
-export interface ExerciseVolume {
-  exerciseId: string;
-  totalReps: number;
-  totalSets: number;
-}
-
-export interface ExerciseRecord {
-  exerciseId: string;
-  maxReps: number;
-  maxWeight: number | null;
-}
-
-export type AllTimeRecord = ExerciseRecord;
-
-export function computeWeeklyVolume(weekWorkouts: WorkoutData[]): ExerciseVolume[] {
-  const map = new Map<string, { totalReps: number; totalSets: number }>();
-  for (const day of weekWorkouts) {
-    for (const entry of day.exercises) {
-      const cur = map.get(entry.exercise_id) ?? { totalReps: 0, totalSets: 0 };
-      map.set(entry.exercise_id, {
-        totalReps: cur.totalReps + entry.sets.reduce((s, set) => s + set.reps, 0),
-        totalSets: cur.totalSets + entry.sets.length,
-      });
-    }
-  }
-  return Array.from(map.entries())
-    .map(([exerciseId, v]) => ({ exerciseId, ...v }))
-    .sort((a, b) => b.totalReps - a.totalReps);
-}
-
-export function computeWeeklyRecords(weekWorkouts: WorkoutData[]): ExerciseRecord[] {
-  const map = new Map<string, { maxReps: number; maxWeight: number | null }>();
-  for (const day of weekWorkouts) {
-    for (const entry of day.exercises) {
-      const cur = map.get(entry.exercise_id) ?? { maxReps: 0, maxWeight: null };
-      for (const set of entry.sets) {
-        cur.maxReps = Math.max(cur.maxReps, set.reps);
-        if (set.weight !== undefined) {
-          cur.maxWeight = Math.max(cur.maxWeight ?? 0, set.weight);
-        }
-      }
-      map.set(entry.exercise_id, cur);
-    }
-  }
-  return Array.from(map.entries()).map(([exerciseId, v]) => ({ exerciseId, ...v }));
-}
-
 // ── Interfaces ────────────────────────────────────────────────────────────────
 
 interface User {
@@ -114,22 +52,6 @@ interface Exercise {
   category: string;
   muscle_groups: string[];
   unit?: string;
-}
-
-export interface WorkoutSet {
-  reps: number;
-  weight?: number;
-}
-
-export interface WorkoutExercise {
-  exercise_id: string;
-  sets: WorkoutSet[];
-  timestamp: string;
-}
-
-export interface WorkoutData {
-  date: string;
-  exercises: WorkoutExercise[];
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -180,49 +102,6 @@ const App: React.FC = () => {
   });
   const weeklyVolume = useMemo(() => computeWeeklyVolume(weekWorkouts), [weekWorkouts]);
   const weeklyRecords = useMemo(() => computeWeeklyRecords(weekWorkouts), [weekWorkouts]);
-
-  // Attach axios interceptors once; clean up on unmount
-  useEffect(() => {
-    const reqId = axios.interceptors.request.use((config) => {
-      const token = getStoredToken();
-      if (token) config.headers.Authorization = `Bearer ${token}`;
-      return config;
-    });
-    const resId = axios.interceptors.response.use(
-      (r) => r,
-      (err) => {
-        if (err.response?.status === 401) {
-          clearStoredToken();
-          setAuthToken(null);
-        }
-        return Promise.reject(err);
-      },
-    );
-    return () => {
-      axios.interceptors.request.eject(reqId);
-      axios.interceptors.response.eject(resId);
-    };
-  }, []);
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { if (authToken) loadInitialData(); }, [authToken]);
-
-  useEffect(() => {
-    if (!currentUserId) return;
-    const dates = getWeekDates(weekOffset);
-    fetchWeekActiveDates(currentUserId, dates);
-    fetchWeekWorkouts(currentUserId, dates);
-  }, [currentUserId, weekOffset]);
-
-  useEffect(() => {
-    if (!currentUserId) return;
-    fetchAllTimeRecords(currentUserId);
-  }, [currentUserId]);
-
-  useEffect(() => {
-    if (!currentUserId) return;
-    fetchDayWorkout(currentUserId, selectedDate);
-  }, [currentUserId, selectedDate]);
 
   const showMessage = (text: string, isError = false) => {
     setMessage({ text, isError });
@@ -291,6 +170,54 @@ const App: React.FC = () => {
       setHistoryWorkout(res.data);
     } catch { /* non-critical */ }
   };
+
+  // Attach axios interceptors once; clean up on unmount
+  useEffect(() => {
+    const reqId = axios.interceptors.request.use((config) => {
+      const token = getStoredToken();
+      if (token) config.headers.Authorization = `Bearer ${token}`;
+      return config;
+    });
+    const resId = axios.interceptors.response.use(
+      (r) => r,
+      (err) => {
+        if (err.response?.status === 401) {
+          clearStoredToken();
+          setAuthToken(null);
+        }
+        return Promise.reject(err);
+      },
+    );
+    return () => {
+      axios.interceptors.request.eject(reqId);
+      axios.interceptors.response.eject(resId);
+    };
+  }, []);
+
+  // The load functions below fetch from the API and set state once the response arrives;
+  // the React Compiler rule can't see that and reports them as synchronous setState.
+  // eslint-disable-next-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
+  useEffect(() => { if (authToken) loadInitialData(); }, [authToken]);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    const dates = getWeekDates(weekOffset);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchWeekActiveDates(currentUserId, dates);
+    fetchWeekWorkouts(currentUserId, dates);
+  }, [currentUserId, weekOffset]);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchAllTimeRecords(currentUserId);
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchDayWorkout(currentUserId, selectedDate);
+  }, [currentUserId, selectedDate]);
 
   const addSet = () => {
     if (!selectedExercise) { showMessage('Please select an exercise', true); return; }
