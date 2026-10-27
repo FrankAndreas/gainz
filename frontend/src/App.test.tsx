@@ -1,14 +1,14 @@
-import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import '@testing-library/jest-dom';
 import axios from 'axios';
+import type { Mocked } from 'vitest';
 
-import App, { today, getWeekDates, computeWeeklyVolume, computeWeeklyRecords } from './App';
-import type { WorkoutData } from './App';
+import App from './App';
+import { today, getWeekDates, computeWeeklyVolume, computeWeeklyRecords } from './workoutStats';
+import type { WorkoutData } from './workoutStats';
 
-jest.mock('axios');
-const mockedAxios = axios as jest.Mocked<typeof axios>;
+vi.mock('axios');
+const mockedAxios = axios as Mocked<typeof axios>;
 
 // Creates a minimal JWT-shaped token the frontend's parseTokenPayload can decode.
 // The frontend only checks exp and sub — no signature verification.
@@ -55,17 +55,17 @@ function setupDefaultMocks() {
 }
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   // axios is fully mocked — provide stub interceptors so App's useEffect doesn't throw
-  (mockedAxios as any).interceptors = {
-    request: { use: jest.fn().mockReturnValue(1), eject: jest.fn() },
-    response: { use: jest.fn().mockReturnValue(1), eject: jest.fn() },
+  (mockedAxios as unknown as { interceptors: unknown }).interceptors = {
+    request: { use: vi.fn().mockReturnValue(1), eject: vi.fn() },
+    response: { use: vi.fn().mockReturnValue(1), eject: vi.fn() },
   };
   // Simulate a logged-in user so App renders the main UI, not LoginPage
-  jest.spyOn(Storage.prototype, 'getItem').mockImplementation((key) =>
+  vi.spyOn(Storage.prototype, 'getItem').mockImplementation((key) =>
     key === 'fitness_token' ? TEST_TOKEN : null
   );
-  jest.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {});
+  vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {});
   setupDefaultMocks();
 });
 
@@ -101,14 +101,16 @@ describe('getWeekDates()', () => {
   it('offset -1 returns the previous week (7 days earlier)', () => {
     const [mon0] = getWeekDates(0);
     const [mon1] = getWeekDates(-1);
-    const diff = (new Date(mon0 + 'T00:00:00').getTime() - new Date(mon1 + 'T00:00:00').getTime()) / 86_400_000;
+    // Rounded: a week across a daylight-saving change is an hour longer or shorter
+    const diff = Math.round((new Date(mon0 + 'T00:00:00').getTime() - new Date(mon1 + 'T00:00:00').getTime()) / 86_400_000);
     expect(diff).toBe(7);
   });
 
   it('offset +1 returns the next week (7 days later)', () => {
     const [mon0] = getWeekDates(0);
     const [mon1] = getWeekDates(1);
-    const diff = (new Date(mon1 + 'T00:00:00').getTime() - new Date(mon0 + 'T00:00:00').getTime()) / 86_400_000;
+    // Rounded: a week across a daylight-saving change is an hour longer or shorter
+    const diff = Math.round((new Date(mon1 + 'T00:00:00').getTime() - new Date(mon0 + 'T00:00:00').getTime()) / 86_400_000);
     expect(diff).toBe(7);
   });
 });
@@ -436,7 +438,7 @@ describe('App — personal records panel', () => {
 
 describe('App — authentication', () => {
   it('shows the login page when no token is stored', () => {
-    jest.spyOn(Storage.prototype, 'getItem').mockReturnValue(null);
+    vi.spyOn(Storage.prototype, 'getItem').mockReturnValue(null);
     render(<App />);
     expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument();
   });
@@ -447,7 +449,7 @@ describe('App — authentication', () => {
   });
 
   it('signs out and shows login page on sign-out click', async () => {
-    const removeSpy = jest.spyOn(Storage.prototype, 'removeItem');
+    const removeSpy = vi.spyOn(Storage.prototype, 'removeItem');
     await renderApp();
     await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
     expect(removeSpy).toHaveBeenCalledWith('fitness_token');
