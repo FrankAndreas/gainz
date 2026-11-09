@@ -1,17 +1,17 @@
-from fastapi import FastAPI, HTTPException, Query, Depends
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import OAuth2PasswordBearer
-from pydantic import BaseModel, field_validator
-from typing import List, Optional
 import json
 import os
 import re
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from contextlib import asynccontextmanager
-from filelock import FileLock
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
 import bcrypt
 import jwt
+from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordBearer
+from filelock import FileLock
+from pydantic import BaseModel, field_validator
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
@@ -21,9 +21,8 @@ _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 def _read_json(path: Path) -> dict:
-    with FileLock(str(path) + ".lock"):
-        with open(path, "r") as f:
-            return json.load(f)
+    with FileLock(str(path) + ".lock"), open(path, "r") as f:
+        return json.load(f)
 
 
 def _write_json(path: Path, data: dict) -> None:
@@ -114,7 +113,7 @@ def create_access_token(user_id: str, expires_delta: timedelta | None = None) ->
     except ValueError:
         raise RuntimeError("JWT_EXPIRE_DAYS must be a plain integer (e.g. 30)")
     delta = expires_delta if expires_delta is not None else timedelta(days=expire_days)
-    payload = {"sub": user_id, "exp": datetime.now(timezone.utc) + delta}
+    payload = {"sub": user_id, "exp": datetime.now(UTC) + delta}
     return jwt.encode(payload, _jwt_secret(), algorithm="HS256")
 
 
@@ -240,17 +239,17 @@ class Exercise(BaseModel):
     id: str
     name: str
     category: str
-    muscle_groups: List[str]
+    muscle_groups: list[str]
 
 
 class WorkoutSet(BaseModel):
     reps: int
-    weight: Optional[float] = None
+    weight: float | None = None
 
 
 class WorkoutEntry(BaseModel):
     exercise_id: str
-    sets: List[WorkoutSet]
+    sets: list[WorkoutSet]
     date: str
     user_id: str
 
@@ -329,7 +328,8 @@ async def login(request: LoginRequest):
 
 
 @app.post("/workouts")
-async def log_workout(
+# Plain def: FastAPI runs it in a worker thread, so the file lock and file I/O don't block the event loop
+def log_workout(
     entry: WorkoutEntry, current_user: str = Depends(get_current_user)
 ):
     _assert_own_resource(current_user, entry.user_id)

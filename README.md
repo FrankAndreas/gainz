@@ -299,3 +299,7 @@ cd frontend && npm test
 must belong to `PUID:PGID` from `.env` (`sudo chown -R <PUID>:<PGID> data`). `JWT_SECRET must be set`: add it to `.env`.
 
 **Everyone is logged out after an update** — `JWT_SECRET` changed in `.env`.
+
+## Pre-commit checks
+
+`.githooks/pre-commit` runs the fast checks CI runs (lint, types) for the parts a commit touches. `npm install` in `frontend/` enables it; or once per clone: `git config core.hooksPath .githooks`. Skip once with `git commit --no-verify`.

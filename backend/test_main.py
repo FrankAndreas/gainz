@@ -1,13 +1,13 @@
 """Basic smoke tests for the Fitness Tracker API."""
 
-import pytest
 from datetime import timedelta
 from unittest.mock import patch
-from fastapi.testclient import TestClient
 
 import jwt
-from backend.main import app
-from backend.main import create_access_token, hash_password, verify_password
+import pytest
+from fastapi.testclient import TestClient
+
+from backend.main import app, create_access_token, hash_password, verify_password
 
 
 @pytest.fixture(autouse=True)
