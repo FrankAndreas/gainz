@@ -12,7 +12,7 @@ from backend.main import (
     _read_credentials,
     _write_credentials,
     hash_password,
-)  # noqa: E402
+)
 
 
 def main() -> None:
@@ -32,7 +32,8 @@ def main() -> None:
         credentials[user_id] = hash_password(new_password)
         _write_credentials(credentials)
         print(f"Password for '{user_id}' updated successfully.")
-    except Exception as e:
+    # Unreadable/unwritable credentials file, bad JSON, or a password the hasher refuses
+    except (OSError, ValueError) as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 

@@ -22,7 +22,10 @@ jobs:
           python-version: "3.14"
           cache: pip
 
-      - run: pip install -r backend/requirements.txt
+      - run: pip install -r backend/requirements.txt ruff==0.17.3
+
+      # The same lint as .githooks/pre-commit
+      - run: ruff check backend
 
       - run: python -m pytest backend/test_main.py -v
 
