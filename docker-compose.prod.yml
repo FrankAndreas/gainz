@@ -22,17 +22,14 @@ services:
     mem_limit: 256m
     memswap_limit: 256m
     volumes:
-      - ./data:/app/backend/data    # users, exercises, credentials and all workouts (JSON)
+      - ./data:/app/backend/data    # users, exercises and all workouts (JSON)
     environment:
       - TZ=${TZ:-Europe/Zurich}
-      # Signs login tokens; required, the backend doesn't start without it
-      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set in .env}
-      - JWT_EXPIRE_DAYS=${JWT_EXPIRE_DAYS:-30}
-      # First start only: passwords for user1 and user2. Remove them from .env afterwards;
-      # to change a password later:
-      #   sudo docker exec -it fitness-backend python backend/set_password.py <user_id> <new_password>
-      - INITIAL_PASSWORD_user1=${INITIAL_PASSWORD_user1:-}
-      - INITIAL_PASSWORD_user2=${INITIAL_PASSWORD_user2:-}
+      # The family hub does the login (README, "Login through the family hub"):
+      # how the backend reaches the hub, where browsers log in, and this app's key in the hub
+      - HUB_URL=${HUB_URL:-}
+      - HUB_PUBLIC_URL=${HUB_PUBLIC_URL:-}
+      - HUB_APP_KEY=${HUB_APP_KEY:-fitness}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s

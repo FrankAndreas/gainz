@@ -8,9 +8,7 @@ RUN npm ci --quiet --ignore-scripts
 
 COPY frontend/ ./
 
-# Call the API on the same origin; nginx forwards /api to the backend
-ARG VITE_API_URL=/api
-ENV VITE_API_URL=$VITE_API_URL
+# The page calls the API on its own origin (/api), which nginx forwards to the backend
 
 RUN npm run build
 

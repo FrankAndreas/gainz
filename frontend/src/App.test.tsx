@@ -5,29 +5,24 @@ import type { AxiosRequestConfig } from 'axios';
 import type { Mocked } from 'vitest';
 
 import App from './App';
+import { goTo } from './navigation';
 import { today, getWeekDates, computeWeeklyVolume, computeWeeklyRecords } from './workoutStats';
 import type { WorkoutData } from './workoutStats';
 
 vi.mock('axios');
 const mockedAxios = axios as Mocked<typeof axios>;
 
-// Creates a minimal JWT-shaped token the frontend's parseTokenPayload can decode.
-// The frontend only checks exp and sub — no signature verification.
-function makeTestToken(userId: string = 'user1'): string {
-  const payload = btoa(JSON.stringify({ sub: userId, exp: 9999999999 }));
-  return `fake-header.${payload}.fake-sig`;
-}
-
-const TEST_TOKEN = makeTestToken('user1');
+vi.mock('./navigation', () => ({ goTo: vi.fn() }));
+const mockedGoTo = vi.mocked(goTo);
 
 // ── Shared fixtures ───────────────────────────────────────────────────────────
 
-const USERS_RESPONSE = {
-  users: [
-    { id: 'user1', name: 'Andreas', created: '2026-01-01' },
-    { id: 'user2', name: 'Family Member', created: '2026-01-01' },
-  ],
-};
+const ME = { id: 'hub1', name: 'Andreas' };
+const HUB = { login_url: 'https://home.local.example', logout_url: 'https://home.local.example/logout' };
+
+function httpError(status: number, code: string) {
+  return Object.assign(new Error(`HTTP ${status}`), { response: { status, data: { detail: { code } } } });
+}
 
 const EXERCISES_RESPONSE = {
   bodyweight: [{ id: 'pushups', name: 'Push-ups', category: 'bodyweight', muscle_groups: ['chest'] }],
@@ -45,7 +40,8 @@ const WORKOUT_WITH_EXERCISES = {
 
 function setupDefaultMocks() {
   mockedAxios.get.mockImplementation((url: string) => {
-    if (url.includes('/users')) return Promise.resolve({ data: USERS_RESPONSE });
+    if (url.endsWith('/me')) return Promise.resolve({ data: ME, headers: {} });
+    if (url.endsWith('/hub')) return Promise.resolve({ data: HUB });
     if (url.includes('/exercises')) return Promise.resolve({ data: EXERCISES_RESPONSE });
     if (/\/workouts\/\d{4}-\d{2}-\d{2}/.test(url)) return Promise.resolve({ data: EMPTY_WORKOUT });
     if (url.includes('/workouts')) return Promise.resolve({ data: { dates: [] } });
@@ -57,16 +53,7 @@ function setupDefaultMocks() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // axios is fully mocked — provide stub interceptors so App's useEffect doesn't throw
-  (mockedAxios as unknown as { interceptors: unknown }).interceptors = {
-    request: { use: vi.fn().mockReturnValue(1), eject: vi.fn() },
-    response: { use: vi.fn().mockReturnValue(1), eject: vi.fn() },
-  };
-  // Simulate a logged-in user so App renders the main UI, not LoginPage
-  vi.spyOn(Storage.prototype, 'getItem').mockImplementation((key) =>
-    key === 'fitness_token' ? TEST_TOKEN : null
-  );
-  vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {});
+  localStorage.clear();
   setupDefaultMocks();
 });
 
@@ -159,7 +146,8 @@ describe('App — week strip activity dots', () => {
   it('shows a dot on days returned by the dates endpoint', async () => {
     const todayStr = today();
     mockedAxios.get.mockImplementation((url: string) => {
-      if (url.includes('/users')) return Promise.resolve({ data: USERS_RESPONSE });
+      if (url.endsWith('/me')) return Promise.resolve({ data: ME, headers: {} });
+    if (url.endsWith('/hub')) return Promise.resolve({ data: HUB });
       if (url.includes('/exercises')) return Promise.resolve({ data: EXERCISES_RESPONSE });
       if (/\/workouts\/\d{4}-\d{2}-\d{2}/.test(url)) return Promise.resolve({ data: EMPTY_WORKOUT });
       if (url.includes('/workouts')) return Promise.resolve({ data: { dates: [todayStr] } });
@@ -181,7 +169,8 @@ describe('App — week strip activity dots', () => {
 describe('App — day detail panel', () => {
   it('shows exercises when the selected day has workouts', async () => {
     mockedAxios.get.mockImplementation((url: string) => {
-      if (url.includes('/users')) return Promise.resolve({ data: USERS_RESPONSE });
+      if (url.endsWith('/me')) return Promise.resolve({ data: ME, headers: {} });
+    if (url.endsWith('/hub')) return Promise.resolve({ data: HUB });
       if (url.includes('/exercises')) return Promise.resolve({ data: EXERCISES_RESPONSE });
       if (/\/workouts\/\d{4}-\d{2}-\d{2}/.test(url)) return Promise.resolve({ data: WORKOUT_WITH_EXERCISES });
       if (url.includes('/workouts')) return Promise.resolve({ data: { dates: [] } });
@@ -201,7 +190,8 @@ describe('App — day detail panel', () => {
       exercises: [{ exercise_id: 'pushups', sets: [{ reps: 12, weight: null }], timestamp: '2026-05-16T10:00:00' }],
     };
     mockedAxios.get.mockImplementation((url: string) => {
-      if (url.includes('/users')) return Promise.resolve({ data: USERS_RESPONSE });
+      if (url.endsWith('/me')) return Promise.resolve({ data: ME, headers: {} });
+    if (url.endsWith('/hub')) return Promise.resolve({ data: HUB });
       if (url.includes('/exercises')) return Promise.resolve({ data: EXERCISES_RESPONSE });
       if (/\/workouts\/\d{4}-\d{2}-\d{2}/.test(url)) return Promise.resolve({ data: workout });
       if (url.includes('/workouts')) return Promise.resolve({ data: { dates: [] } });
@@ -260,7 +250,8 @@ describe('App — week navigation', () => {
     const prevWeek = getWeekDates(-1);
     let answerThisWeek: (response: unknown) => void = () => {};
     mockedAxios.get.mockImplementation((url: string, config?: AxiosRequestConfig) => {
-      if (url.includes('/users')) return Promise.resolve({ data: USERS_RESPONSE });
+      if (url.endsWith('/me')) return Promise.resolve({ data: ME, headers: {} });
+    if (url.endsWith('/hub')) return Promise.resolve({ data: HUB });
       if (url.includes('/exercises')) return Promise.resolve({ data: EXERCISES_RESPONSE });
       if (/\/workouts\/\d{4}-\d{2}-\d{2}/.test(url)) return Promise.resolve({ data: EMPTY_WORKOUT });
       if (url.includes('/records')) return Promise.resolve({ data: { records: [] } });
@@ -408,7 +399,8 @@ describe('App — analytics panel', () => {
   it('renders week summary when workouts exist', async () => {
     const todayStr = today();
     mockedAxios.get.mockImplementation((url: string) => {
-      if (url.includes('/users')) return Promise.resolve({ data: USERS_RESPONSE });
+      if (url.endsWith('/me')) return Promise.resolve({ data: ME, headers: {} });
+    if (url.endsWith('/hub')) return Promise.resolve({ data: HUB });
       if (url.includes('/exercises')) return Promise.resolve({ data: EXERCISES_RESPONSE });
       if (/\/workouts\/\d{4}-\d{2}-\d{2}/.test(url)) {
         // Only today has data — other days return empty so weekly total = 10 reps
@@ -447,7 +439,8 @@ const RECORDS_RESPONSE: { records: { exercise_id: string; max_reps: number; max_
 
 function setupRecordsMocks() {
   mockedAxios.get.mockImplementation((url: string) => {
-    if (url.includes('/users')) return Promise.resolve({ data: USERS_RESPONSE });
+    if (url.endsWith('/me')) return Promise.resolve({ data: ME, headers: {} });
+    if (url.endsWith('/hub')) return Promise.resolve({ data: HUB });
     if (url.includes('/exercises')) return Promise.resolve({ data: EXERCISES_RESPONSE });
     if (/\/workouts\/\d{4}-\d{2}-\d{2}/.test(url)) return Promise.resolve({ data: EMPTY_WORKOUT });
     if (url.includes('/workouts')) return Promise.resolve({ data: { dates: [] } });
@@ -504,23 +497,85 @@ describe('App — personal records panel', () => {
   });
 });
 
-describe('App — authentication', () => {
-  it('shows the login page when no token is stored', () => {
-    vi.spyOn(Storage.prototype, 'getItem').mockReturnValue(null);
-    render(<App />);
-    expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument();
-  });
+describe('App — family hub login', () => {
+  function answer(path: string, result: () => Promise<unknown>) {
+    const fallback = mockedAxios.get.getMockImplementation()!;
+    mockedAxios.get.mockImplementation((url: string, ...rest) => (url.endsWith(path) ? result() : fallback(url, ...rest)));
+  }
 
-  it('shows a sign-out button when logged in', async () => {
+  it('shows the name from the hub', async () => {
     await renderApp();
-    expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+    expect(screen.getByText('Andreas')).toBeInTheDocument();
   });
 
-  it('signs out and shows login page on sign-out click', async () => {
-    const removeSpy = vi.spyOn(Storage.prototype, 'removeItem');
+  it('redirects to the hub on 401', async () => {
+    answer('/me', () => Promise.reject(httpError(401, 'not_logged_in')));
+    render(<App />);
+    await waitFor(() =>
+      expect(mockedGoTo).toHaveBeenCalledWith(
+        `https://home.local.example/?next=${encodeURIComponent(window.location.href)}`,
+      ),
+    );
+  });
+
+  it('shows the no access page', async () => {
+    answer('/me', () => Promise.reject(httpError(403, 'no_access')));
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: 'No access' })).toBeInTheDocument();
+    expect(screen.getByText("You don't have access to the fitness tracker.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Log in as someone else' }));
+    expect(mockedGoTo).toHaveBeenCalledWith(
+      `https://home.local.example/logout?next=${encodeURIComponent(window.location.href)}`,
+    );
+  });
+
+  it('shows hub unavailable and retries', async () => {
+    let down = true;
+    answer('/me', () =>
+      down ? Promise.reject(httpError(503, 'hub_unavailable')) : Promise.resolve({ data: ME, headers: {} }),
+    );
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: "The family hub can't be reached" })).toBeInTheDocument();
+    down = false;
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('Andreas')).toBeInTheDocument();
+  });
+
+  it('goes through the hub once when renew is due', async () => {
+    answer('/me', () => Promise.resolve({ data: ME, headers: { 'x-hub-renew': '1' } }));
+    await renderApp();
+    expect(mockedGoTo).toHaveBeenCalledTimes(1);
+    expect(mockedGoTo).toHaveBeenCalledWith(
+      `https://home.local.example/?next=${encodeURIComponent(window.location.href)}`,
+    );
+  });
+
+  it('sign out goes to the hub logout', async () => {
     await renderApp();
     await userEvent.click(screen.getByRole('button', { name: 'Sign out' }));
-    expect(removeSpy).toHaveBeenCalledWith('fitness_token');
-    expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument();
+    expect(mockedGoTo).toHaveBeenCalledWith(
+      `https://home.local.example/logout?next=${encodeURIComponent(window.location.origin)}`,
+    );
+  });
+
+  it('removes an old fitness_token and sends no Authorization header', async () => {
+    localStorage.setItem('fitness_token', 'old.jwt.token');
+    await renderApp();
+    expect(localStorage.getItem('fitness_token')).toBeNull();
+    for (const call of [...mockedAxios.get.mock.calls, ...mockedAxios.post.mock.calls]) {
+      expect(JSON.stringify(call)).not.toContain('Authorization');
+    }
+  });
+
+  it('logs a workout without a user id', async () => {
+    await renderApp();
+    await userEvent.selectOptions(screen.getByLabelText('Exercise:'), 'pushups');
+    await userEvent.type(screen.getByLabelText('Reps:'), '10');
+    await userEvent.click(screen.getByRole('button', { name: 'Add Set' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Log Workout' }));
+    await waitFor(() => expect(mockedAxios.post).toHaveBeenCalled());
+    const [url, body] = mockedAxios.post.mock.calls[0];
+    expect(url).toBe('/api/workouts');
+    expect(body).not.toHaveProperty('user_id');
   });
 });

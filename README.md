@@ -4,7 +4,7 @@ Personal home workout tracker — log sets & reps, browse week history, and trac
 
 ## Features
 
-- **Multi-user support** without authentication (family-friendly)
+- **One login for the family** through the [family hub](https://github.com/FrankAndreas/family-hub): everyone sees only their own workouts
 - **Multi-set logging** — add as many sets as you need before submitting
 - **Week history browser** — navigate by week, see which days have workouts
 - **File-based storage** using JSON files (no database required)
@@ -40,12 +40,14 @@ Personal home workout tracker — log sets & reps, browse week history, and trac
    ```
    - Backend API: http://localhost:8000
    - Frontend:    http://localhost:3000
+   - Logging in needs a family hub: run family-hub's `scripts/dev-backend.sh` next to it (`HUB_URL` defaults to
+     `http://localhost:8086`), or call the API with `Authorization: Bearer <hub token>`.
 
 ## Usage
 
 ### Logging a workout
 
-1. Select a user from the dropdown
+1. Open the tracker from the family hub (or `https://fitness.local.<domain>`); you are logged in as yourself
 2. Choose an exercise
 3. Enter reps (and optional weight), click **Add Set** — repeat for each set
 4. Click **Log Workout** to save
@@ -111,19 +113,25 @@ All data lives in `data/` (created automatically, excluded from git):
 
 | File | Contents |
 |---|---|
-| `users.json` | User list |
+| `users.json` | The people from the family hub (`hub_id`, `is_active`; see below) |
 | `exercises.json` | Exercise catalogue |
-| `workouts/{user_id}/{date}.json` | One file per user per day |
+| `workouts/{user id}/{date}.json` | One file per person per day |
 
 ## API Reference
 
 All endpoints return JSON. Validation errors return HTTP 400 or 422; server errors return 500.
 
-### `GET /users`
-Returns the user list.
-```json
-{ "users": [{ "id": "user1", "name": "Andreas", "created": "…" }] }
-```
+Every endpoint except `/`, `/health` and `/hub` needs the family hub's login: the cookie `hub_session`, or
+`Authorization: Bearer <hub token>` for scripts. A change made with the cookie needs `X-Requested-With: fitness`. Login
+errors carry a code: 401 `not_logged_in`, 403 `csrf`, 403 `no_access`, 503 `hub_unavailable`
+(`{"detail": {"code": "no_access"}}`). The workouts are always the logged-in person's.
+
+### `GET /me`
+Who is logged in: `{ "id": "user1", "name": "Andreas" }`. In the hub login's last week the answer carries
+`X-Hub-Renew: 1`.
+
+### `GET /hub`
+Where the family hub is: `{ "login_url": "https://home.local.<domain>", "logout_url": "https://home.local.<domain>/logout" }`.
 
 ### `GET /exercises`
 Returns exercises grouped by category.
@@ -135,16 +143,15 @@ Returns exercises grouped by category.
 Log a workout. All fields are required.
 ```json
 {
-  "user_id": "user1",
   "date": "2026-05-16",
   "exercise_id": "pushups",
   "sets": [{ "reps": 10 }, { "reps": 8, "weight": 5.0 }]
 }
 ```
-`date` must be `YYYY-MM-DD`. `user_id` must be alphanumeric (plus `_` and `-`).
+`date` must be `YYYY-MM-DD`.
 
-### `GET /workouts/{date}?user_id=`
-Returns all logged exercises for a user on a given date.
+### `GET /workouts/{date}`
+Returns all logged exercises on a given date.
 ```json
 {
   "date": "2026-05-16",
@@ -154,7 +161,7 @@ Returns all logged exercises for a user on a given date.
 }
 ```
 
-### `GET /workouts?user_id=&date_from=&date_to=`
+### `GET /workouts?date_from=&date_to=`
 Returns dates within the range that have at least one logged workout.
 ```json
 { "dates": ["2026-05-13", "2026-05-16"] }
@@ -187,11 +194,10 @@ It is set up like the other family apps (family-chore on 8080, family-budget on 
    sudo mkdir -p data
    sudo chown -R 1031:100 data    # the IDs from step 1
    ```
-3. **Create `.env`** (all settings are explained in `.env.example`), with the first passwords of
-   `user1` and `user2`:
+3. **Create `.env`** (all settings are explained in `.env.example`):
    ```bash
-   printf 'PUID=1031\nPGID=100\nPORT=8083\nTZ=Europe/Zurich\nJWT_SECRET=%s\nINITIAL_PASSWORD_user1=...\nINITIAL_PASSWORD_user2=...\n' \
-     "$(openssl rand -hex 32)" | sudo tee .env
+   printf 'PUID=1031\nPGID=100\nPORT=8083\nTZ=Europe/Zurich\nHUB_URL=http://<NAS_IP>:8086\nHUB_PUBLIC_URL=https://home.local.<domain>\nHUB_APP_KEY=fitness\n' \
+     | sudo tee .env
    sudo chmod 600 .env
    ```
 4. **Start** it:
@@ -199,17 +205,38 @@ It is set up like the other family apps (family-chore on 8080, family-budget on 
    sudo docker-compose pull
    sudo docker-compose up -d
    ```
-5. **Open** `http://<NAS_IP>:8083` and log in as `user1` or `user2`.
-6. **Remove the two `INITIAL_PASSWORD_*` lines from `.env`.** They are only read on the first start.
-   To change a password later:
+5. **Set up the login** as in [Login through the family hub](#login-through-the-family-hub), then open
+   `https://fitness.local.<domain>`.
+
+### Login through the family hub
+
+The tracker has no passwords of its own: the [family hub](https://github.com/FrankAndreas/family-hub) logs everyone in
+(its README, "For apps"), as in the other family apps. It works at home only: requests through the Cloudflare tunnel
+are not logged in.
+
+1. **Address.** The hub's login cookie is set for `local.<domain>`, so the tracker needs an address there. In
+   **Control Panel → Login Portal → Advanced → Reverse Proxy → Create**: source HTTPS, `fitness.local.<domain>`, port
+   443, **Enable HSTS**; destination HTTP, `localhost`, port 8083. Under **Security → Certificate → Settings** pick the
+   `*.local.<domain>` certificate for it.
+2. **Settings.** `HUB_URL`, `HUB_PUBLIC_URL` and `HUB_APP_KEY` in `.env` (step 3 above).
+3. **The tile.** In the hub, **Einstellungen → Apps**: home address `https://fitness.local.<domain>`, no outside
+   address, App-Schlüssel `fitness` (the same as `HUB_APP_KEY`), and tick the people who may use the tracker.
+4. **Existing workouts.** On the first login, the people in `data/users.json` from before the hub are linked to the hub
+   person with the same name (case and surrounding spaces ignored), once. So before that, give the hub people the
+   names in `users.json` (e.g. `Andreas`). Someone whose name doesn't match (e.g. `Family Member`) gets a new, empty
+   account; link the old one by hand with their id in the hub:
    ```bash
-   sudo docker exec -it fitness-backend python backend/set_password.py user1 'new password'
+   sudo docker exec fitness-backend python backend/link_user.py user2 <hub id>
    ```
+5. **Clean up.** Remove `JWT_SECRET`, `JWT_EXPIRE_DAYS` and `INITIAL_PASSWORD_*` from `.env`, and delete
+   `data/credentials.json` (the old password hashes).
+
+Someone the hub no longer lets use the tracker is hidden; their workouts stay in `data/workouts/<user id>` until you
+delete that folder. Given access again, they get them back.
 
 ### Where the data is
 
-Everything is in `data/` as JSON files (see [Data Storage](#data-storage)), plus `credentials.json`
-with the password hashes. Include `data/` in your Hyper Backup task.
+Everything is in `data/` as JSON files (see [Data Storage](#data-storage)). Include `data/` in your Hyper Backup task.
 
 ### Automatic updates
 
@@ -274,7 +301,7 @@ pre-commit run --all-files
 
 ```bash
 # Backend (from repo root)
-python -m pytest backend/test_main.py --cov=backend.main -v
+python -m pytest backend -v
 
 # Frontend
 cd frontend && npm test
@@ -284,8 +311,10 @@ cd frontend && npm test
 
 | Variable | Default | Description |
 |---|---|---|
-| `VITE_API_URL` | `http://localhost:8000` | Backend URL used by the frontend (read at build time) |
-| `ALLOWED_ORIGIN` | `http://localhost:3000` | CORS origin allowed by the backend |
+| `HUB_URL` | `http://localhost:8086` | How the backend reaches the family hub |
+| `HUB_PUBLIC_URL` | `HUB_URL` | Where browsers log in (the hub's home address) |
+| `HUB_APP_KEY` | `fitness` | The tracker's key in the hub |
+| `API_PROXY` | `http://localhost:8000` | Where the Vite dev server forwards `/api` |
 
 ## Troubleshooting
 
@@ -296,9 +325,14 @@ cd frontend && npm test
 **Data not saving** — check write permissions on the `data/` directory.
 
 **Backend not starting on the NAS** — `sudo docker logs fitness-backend`. `PermissionError` on `data`: the folder
-must belong to `PUID:PGID` from `.env` (`sudo chown -R <PUID>:<PGID> data`). `JWT_SECRET must be set`: add it to `.env`.
+must belong to `PUID:PGID` from `.env` (`sudo chown -R <PUID>:<PGID> data`).
 
-**Everyone is logged out after an update** — `JWT_SECRET` changed in `.env`.
+**"The family hub can't be reached"** — the backend can't reach `HUB_URL`; check the hub runs and the address.
+
+**Sent to the hub's login again and again** — the tracker isn't at `https://fitness.local.<domain>` (the hub's cookie
+only reaches `*.local.<domain>`), or the tile's address doesn't match.
+
+**"No access"** — the person isn't ticked in the hub's tile, or the tile's App-Schlüssel isn't `fitness`.
 
 ## Pre-commit checks
 

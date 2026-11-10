@@ -1,61 +1,47 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import axios from 'axios';
-import LoginPage from './LoginPage';
 import {
   API_URL,
+  errorCode,
   fetchActiveDates,
   fetchAllTimeRecords,
   fetchDayWorkout,
-  fetchUsersAndExercises,
+  fetchExercises,
+  fetchHubLinks,
+  fetchMe,
   fetchWeekWorkouts,
 } from './api';
-import type { Exercise, User } from './api';
+import type { Exercise, Me } from './api';
+import { loginAddress } from './hubAddress';
+import type { HubLinks } from './hubAddress';
+import { goTo } from './navigation';
 import { today, getWeekDates, computeWeeklyVolume, computeWeeklyRecords } from './workoutStats';
 import type { AllTimeRecord, WorkoutData, WorkoutSet } from './workoutStats';
 
-// ── Token helpers ─────────────────────────────────────────────────────────────
+// The login is the family hub's (its cookie). Before the hub, the tracker kept its own token here: drop it
+const OLD_TOKEN_KEY = 'fitness_token';
 
-export const TOKEN_KEY = 'fitness_token';
-
-function getStoredToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
-}
-
-function clearStoredToken(): void {
-  localStorage.removeItem(TOKEN_KEY);
-}
-
-function parseTokenPayload(token: string): { sub: string; exp: number } | null {
+function dropOldToken(): void {
   try {
-    const raw = token.split('.')[1];
-    const padded = raw + '=='.slice(0, (4 - raw.length % 4) % 4);
-    return JSON.parse(atob(padded));
+    localStorage.removeItem(OLD_TOKEN_KEY);
   } catch {
-    return null;
+    // No storage (private window): nothing to drop
   }
 }
 
-function isTokenExpired(token: string): boolean {
-  const payload = parseTokenPayload(token);
-  if (!payload) return true;
-  return Date.now() / 1000 >= payload.exp;
-}
-
-function getUserIdFromToken(token: string): string | null {
-  return parseTokenPayload(token)?.sub ?? null;
-}
+type Status = 'loading' | 'ready' | 'no_access' | 'hub_unavailable' | 'error';
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
 const App: React.FC = () => {
-  // Auth state: initialised from localStorage so there's no flash of login screen
-  const [authToken, setAuthToken] = useState<string | null>(() => {
-    const t = getStoredToken();
-    return t && !isTokenExpired(t) ? t : null;
-  });
+  // Who is logged in (from the hub), and where the hub is
+  const [status, setStatus] = useState<Status>('loading');
+  const [me, setMe] = useState<Me | null>(null);
+  const [links, setLinks] = useState<HubLinks | null>(null);
+  // Bumped by "Try again", so the effect below loads everything again
+  const [attempt, setAttempt] = useState<number>(0);
 
   // All other state
-  const [users, setUsers] = useState<User[]>([]);
   const [exercises, setExercises] = useState<{ [key: string]: Exercise[] }>({});
   const [selectedExercise, setSelectedExercise] = useState<string>('');
   const [reps, setReps] = useState<string>('');
@@ -65,7 +51,6 @@ const App: React.FC = () => {
   );
   const [pendingSets, setPendingSets] = useState<WorkoutSet[]>([]);
   const [submitting, setSubmitting] = useState<boolean>(false);
-  const [initialLoading, setInitialLoading] = useState<boolean>(true);
   const [message, setMessage] = useState<{ text: string; isError: boolean } | null>(null);
   const [selectedDate, setSelectedDate] = useState<string>(today());
   const [weekOffset, setWeekOffset] = useState<number>(0);
@@ -77,18 +62,13 @@ const App: React.FC = () => {
   // Bumped after logging a workout, so the effects below reload the workout data
   const [dataVersion, setDataVersion] = useState<number>(0);
 
-  // Derived from token — no separate state needed
-  const currentUserId = useMemo(
-    () => (authToken ? (getUserIdFromToken(authToken) ?? '') : ''),
-    [authToken],
-  );
+  const currentUserId = me?.id ?? '';
 
   // Computed display values — must be declared before any conditional return
   const allExercises = useMemo(() => Object.values(exercises).flat(), [exercises]);
   const getExerciseName = (id: string) => allExercises.find(e => e.id === id)?.name ?? id;
   const getExerciseUnit = (id: string) => allExercises.find(e => e.id === id)?.unit ?? 'reps';
   const selectedExerciseUnit = getExerciseUnit(selectedExercise);
-  const currentUserName = users.find(u => u.id === currentUserId)?.name ?? currentUserId;
   const weekDates = useMemo(() => getWeekDates(weekOffset), [weekOffset]);
   const selectedDateLabel = new Date(selectedDate + 'T00:00:00').toLocaleDateString('en', {
     weekday: 'long', day: 'numeric', month: 'long',
@@ -101,69 +81,71 @@ const App: React.FC = () => {
     setTimeout(() => setMessage(null), 4000);
   }, []);
 
-  const handleLogin = (token: string) => {
-    setInitialLoading(true);
-    setAuthToken(token);
-  };
+  // Not logged in: to the hub's login, which sends the browser back here
+  const toHubLogin = useCallback((hub: HubLinks) => {
+    const address = loginAddress(hub, window.location.href);
+    if (address) goTo(address);
+  }, []);
 
   const handleLogout = () => {
-    clearStoredToken();
-    setAuthToken(null);
+    if (links) goTo(`${links.logout_url}?next=${encodeURIComponent(window.location.origin)}`);
   };
 
-  // Attach axios interceptors once; clean up on unmount
-  useEffect(() => {
-    const reqId = axios.interceptors.request.use((config) => {
-      const token = getStoredToken();
-      if (token) config.headers.Authorization = `Bearer ${token}`;
-      return config;
-    });
-    const resId = axios.interceptors.response.use(
-      (r) => r,
-      (err) => {
-        if (err.response?.status === 401) {
-          clearStoredToken();
-          setAuthToken(null);
-        }
-        return Promise.reject(err);
-      },
-    );
-    return () => {
-      axios.interceptors.request.eject(reqId);
-      axios.interceptors.response.eject(resId);
-    };
-  }, []);
+  const logInAsSomeoneElse = () => {
+    if (links) goTo(`${links.logout_url}?next=${encodeURIComponent(window.location.href)}`);
+  };
+
+  // A login problem from any request: the hub's login, or the page that says what is wrong
+  const handleLoginError = useCallback((err: unknown, hub: HubLinks | null): boolean => {
+    const code = errorCode(err);
+    if (code === 'not_logged_in') {
+      if (hub) toHubLogin(hub);
+      return true;
+    }
+    if (code === 'no_access' || code === 'hub_unavailable') {
+      setStatus(code);
+      return true;
+    }
+    return false;
+  }, [toHubLogin]);
 
   // Each effect drops responses that arrive after its inputs changed (or the component
   // unmounted), so a slow answer for a previous week or day can't overwrite the current one.
   useEffect(() => {
-    if (!authToken) return;
     let current = true;
-    fetchUsersAndExercises()
-      .then(({ users, exercises }) => {
+    dropOldToken();
+    (async () => {
+      let hub: HubLinks | null = null;
+      try {
+        hub = await fetchHubLinks();
         if (!current) return;
-        setUsers(users);
-        setExercises(exercises);
-      })
-      .catch(() => {
-        if (current) showMessage('Error loading data. Make sure the backend is running.', true);
-      })
-      .finally(() => {
-        if (current) setInitialLoading(false);
-      });
+        setLinks(hub);
+        const [{ me: person, renew }, exerciseList] = await Promise.all([fetchMe(), fetchExercises()]);
+        if (!current) return;
+        setMe(person);
+        setExercises(exerciseList);
+        setStatus('ready');
+        // The hub login is in its last week: once through the hub, which renews it and sends the browser back
+        if (renew) toHubLogin(hub);
+      } catch (err) {
+        if (!current || handleLoginError(err, hub)) return;
+        setStatus('error');
+        showMessage('Error loading data. Make sure the backend is running.', true);
+      }
+    })();
     return () => { current = false; };
-  }, [authToken, showMessage]);
+  }, [attempt, handleLoginError, showMessage, toHubLogin]);
 
   // The remaining data is non-critical: on failure the previous values stay
   useEffect(() => {
     if (!currentUserId) return;
     let current = true;
     const dates = getWeekDates(weekOffset);
-    fetchActiveDates(currentUserId, dates).then(
+    fetchActiveDates(dates).then(
       (active) => { if (current) setActiveDates(active); },
       () => {},
     );
-    fetchWeekWorkouts(currentUserId, dates).then(
+    fetchWeekWorkouts(dates).then(
       (workouts) => { if (current) setWeekWorkouts(workouts); },
       () => {},
     );
@@ -173,7 +155,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!currentUserId) return;
     let current = true;
-    fetchAllTimeRecords(currentUserId).then(
+    fetchAllTimeRecords().then(
       (records) => { if (current) setAllTimeRecords(records); },
       () => {},
     );
@@ -183,7 +165,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!currentUserId) return;
     let current = true;
-    fetchDayWorkout(currentUserId, selectedDate).then(
+    fetchDayWorkout(selectedDate).then(
       (workout) => { if (current) setHistoryWorkout(workout); },
       () => {},
     );
@@ -230,25 +212,47 @@ const App: React.FC = () => {
         exercise_id: selectedExercise,
         sets: pendingSets,
         date: selectedDate,
-        user_id: currentUserId,
       });
       showMessage('Workout logged successfully!');
       setSelectedExercise('');
       setPendingSets([]);
       setDataVersion(v => v + 1);
-    } catch {
-      showMessage('Error logging workout', true);
+    } catch (err) {
+      if (!handleLoginError(err, links)) showMessage('Error logging workout', true);
     } finally {
       setSubmitting(false);
     }
   };
 
-  // Show login screen when not authenticated
-  if (!authToken) {
-    return <LoginPage onLogin={handleLogin} />;
+  if (status === 'no_access') {
+    return (
+      <main className="hub-page">
+        <h1>No access</h1>
+        <p>You don't have access to the fitness tracker.</p>
+        <button className="btn btn-primary" onClick={logInAsSomeoneElse} type="button">
+          Log in as someone else
+        </button>
+      </main>
+    );
   }
 
-  if (initialLoading) {
+  if (status === 'hub_unavailable') {
+    return (
+      <main className="hub-page">
+        <h1>The family hub can't be reached</h1>
+        <p>Logging in goes through the family hub. Try again in a moment.</p>
+        <button
+          className="btn btn-primary"
+          onClick={() => { setStatus('loading'); setAttempt(a => a + 1); }}
+          type="button"
+        >
+          Try again
+        </button>
+      </main>
+    );
+  }
+
+  if (status === 'loading') {
     return <div className="loading-screen"><div className="spinner" aria-label="Loading" /></div>;
   }
 
@@ -257,7 +261,7 @@ const App: React.FC = () => {
       <header className="header">
         <h1>Fitness Tracker</h1>
         <div className="header-user">
-          <span>{currentUserName}</span>
+          <span>{me?.name}</span>
           <button className="btn btn-secondary btn-sm" onClick={handleLogout} type="button">
             Sign out
           </button>
