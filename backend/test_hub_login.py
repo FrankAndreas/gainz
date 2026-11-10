@@ -160,3 +160,134 @@ class TestPeopleSync:
         refresh("tok-Andreas")
         assert len(calls) == 2
         assert hub_people.local_id(1) == "hub1"
+
+
+from fastapi.testclient import TestClient
+
+from backend.main import app
+
+client = TestClient(app)
+
+WORKOUT = {"exercise_id": "pushups", "sets": [{"reps": 10}], "date": "2026-01-05"}
+
+
+def code(response) -> str:
+    return response.json()["detail"]["code"]
+
+
+@pytest.fixture
+def cookie_client():
+    with TestClient(app) as fresh:
+        yield fresh
+
+
+class TestLogin:
+    def test_bearer_login_me(self, login):
+        r = client.get("/me", headers=login("Andreas"))
+        assert r.status_code == 200
+        assert r.json() == {"id": "hub1", "name": "Andreas"}
+
+    def test_cookie_login_get(self, login, cookie_client):
+        login("Andreas")
+        cookie_client.cookies.set("hub_session", "tok-Andreas")
+        assert cookie_client.get("/exercises").status_code == 200
+
+    def test_cookie_change_needs_csrf_header(self, login, cookie_client):
+        login("Andreas")
+        cookie_client.cookies.set("hub_session", "tok-Andreas")
+        r = cookie_client.post("/workouts", json=WORKOUT)
+        assert r.status_code == 403
+        assert code(r) == "csrf"
+        r = cookie_client.post("/workouts", json=WORKOUT, headers={"X-Requested-With": "fitness"})
+        assert r.status_code == 200
+
+    def test_bearer_change_needs_no_csrf_header(self, login):
+        assert client.post("/workouts", json=WORKOUT, headers=login()).status_code == 200
+
+    def test_no_token_401(self):
+        r = client.get("/me")
+        assert r.status_code == 401
+        assert code(r) == "not_logged_in"
+        assert r.headers["WWW-Authenticate"] == "Bearer"
+
+    def test_unknown_token_401(self):
+        r = client.get("/me", headers={"Authorization": "Bearer tok-Nobody"})
+        assert r.status_code == 401
+        assert code(r) == "not_logged_in"
+
+    def test_tunnel_header_401(self, login):
+        r = client.get("/me", headers={**login(), "Cf-Connecting-Ip": "203.0.113.9"})
+        assert r.status_code == 401
+        assert code(r) == "not_logged_in"
+
+    def test_no_access_403(self, login):
+        r = client.get("/me", headers=login("Kim", access=False))
+        assert r.status_code == 403
+        assert code(r) == "no_access"
+
+    def test_hub_down_503(self, login, fake_hub):
+        headers = login()
+        fake_hub.down = True
+        r = client.get("/me", headers=headers)
+        assert r.status_code == 503
+        assert code(r) == "hub_unavailable"
+        assert users() == []
+
+    def test_renew_header(self, login, fake_hub):
+        headers = login()
+        assert "X-Hub-Renew" not in client.get("/me", headers=headers).headers
+        fake_hub.renewing.add("Andreas")
+        hub.client.forget()
+        assert client.get("/me", headers=headers).headers["X-Hub-Renew"] == "1"
+
+    def test_given_access_a_moment_ago(self, login, fake_hub):
+        headers = login("Kim", access=False)
+        assert client.get("/me", headers=headers).status_code == 403
+        fake_hub.give_access("Kim")
+        assert client.get("/me", headers=headers).status_code == 200
+
+    def test_rename_shows_at_once(self, login, fake_hub):
+        client.get("/me", headers=login("Andreas"))
+        fake_hub.rename("Andreas", "Andi")
+        assert client.get("/me", headers={"Authorization": "Bearer tok-Andi"}).json()["name"] == "Andi"
+
+    def test_hub_links(self, monkeypatch):
+        monkeypatch.setenv("HUB_PUBLIC_URL", "https://home.local.example")
+        assert client.get("/hub").json() == {
+            "login_url": "https://home.local.example",
+            "logout_url": "https://home.local.example/logout",
+        }
+
+    def test_login_endpoint_gone(self):
+        assert client.post("/login", json={"user_id": "user1", "password": "x"}).status_code in (404, 405)
+
+
+class TestOwnWorkouts:
+    def test_workouts_are_the_logins_own(self, login):
+        andreas, lena = login("Andreas"), login("Lena")
+        assert client.post("/workouts", json=WORKOUT, headers=andreas).status_code == 200
+        other = {**WORKOUT, "exercise_id": "squats", "sets": [{"reps": 20}]}
+        assert client.post("/workouts", json=other, headers=lena).status_code == 200
+
+        dates = {"date_from": "2026-01-01", "date_to": "2026-01-31"}
+        assert client.get("/workouts", params=dates, headers=andreas).json() == {"dates": ["2026-01-05"]}
+        day = client.get("/workouts/2026-01-05", params={"user_id": "hub2"}, headers=andreas).json()
+        assert [e["exercise_id"] for e in day["exercises"]] == ["pushups"]
+        records = client.get("/records", params={"user_id": "hub2"}, headers=andreas).json()["records"]
+        assert [r["exercise_id"] for r in records] == ["pushups"]
+        day = client.get("/workouts/2026-01-05", headers=lena).json()
+        assert [e["exercise_id"] for e in day["exercises"]] == ["squats"]
+
+    def test_user_id_in_body_ignored(self, login, data_dir):
+        r = client.post("/workouts", json={**WORKOUT, "user_id": "hub2"}, headers=login())
+        assert r.status_code == 200
+        assert (data_dir / "workouts" / "hub1" / "2026-01-05.json").exists()
+        assert not (data_dir / "workouts" / "hub2").exists()
+
+    def test_linked_person_sees_old_workouts(self, login, data_dir):
+        write_users([old_user("user1", "Andreas")])
+        old = data_dir / "workouts" / "user1" / "2026-01-05.json"
+        old.parent.mkdir(parents=True)
+        old.write_text(json.dumps({"date": "2026-01-05", "exercises": [{"exercise_id": "planks", "sets": []}]}))
+        day = client.get("/workouts/2026-01-05", headers=login("Andreas")).json()
+        assert [e["exercise_id"] for e in day["exercises"]] == ["planks"]

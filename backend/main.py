@@ -1,30 +1,16 @@
 import json
-import os
 import re
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime, timedelta
-from pathlib import Path
+from datetime import datetime
 
-import bcrypt
-import jwt
-from fastapi import Depends, FastAPI, HTTPException, Query
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import OAuth2PasswordBearer
+from fastapi import FastAPI, HTTPException, Query
 from filelock import FileLock
 from pydantic import BaseModel, field_validator
 
-from backend import storage
+from backend import hub, storage
+from backend.auth import CurrentPerson
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
-
-_USER_ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-
-
-def _safe_user_id(user_id: str) -> str:
-    if not _USER_ID_RE.fullmatch(user_id):
-        raise HTTPException(status_code=400, detail="Invalid user_id")
-    return user_id
 
 
 def _safe_date(date: str) -> str:
@@ -37,88 +23,6 @@ def _safe_date(date: str) -> str:
             status_code=400, detail="date must be a valid calendar date"
         )
     return date
-
-
-def _assert_own_resource(current_user: str, requested_user_id: str) -> None:
-    if current_user != requested_user_id:
-        raise HTTPException(status_code=403, detail="Access denied")
-
-
-def _credentials_path() -> Path:
-    return storage.DATA_DIR / "credentials.json"
-
-
-def _read_credentials() -> dict:
-    path = _credentials_path()
-    with FileLock(str(path) + ".lock"):
-        try:
-            with open(path, "r") as f:
-                return json.load(f)
-        except FileNotFoundError:
-            return {}
-
-
-def _write_credentials(data: dict) -> None:
-    path = _credentials_path()
-    tmp = Path(str(path) + ".tmp")
-    with FileLock(str(path) + ".lock"):
-        with open(tmp, "w") as f:
-            json.dump(data, f, indent=2)
-        os.replace(tmp, path)
-
-
-# Passwords are hashed with bcrypt directly (passlib is unmaintained and breaks with bcrypt 5).
-# The hash format is unchanged, so hashes written by passlib keep working.
-_BCRYPT_MAX_BYTES = 72
-
-
-def hash_password(password: str) -> str:
-    if len(password.encode()) > _BCRYPT_MAX_BYTES:
-        raise ValueError(
-            f"Password is longer than {_BCRYPT_MAX_BYTES} bytes, bcrypt's limit"
-        )
-    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-
-
-def verify_password(password: str, password_hash: str) -> bool:
-    try:
-        return bcrypt.checkpw(password.encode(), password_hash.encode())
-    except ValueError:
-        # Over bcrypt's 72-byte limit, or not a bcrypt hash: a failed login, not a server error
-        return False
-
-
-def _jwt_secret() -> str:
-    secret = os.getenv("JWT_SECRET")
-    if not secret:
-        raise RuntimeError("JWT_SECRET environment variable must be set")
-    return secret
-
-
-def create_access_token(user_id: str, expires_delta: timedelta | None = None) -> str:
-    try:
-        expire_days = int(os.getenv("JWT_EXPIRE_DAYS", "30"))
-    except ValueError:
-        raise RuntimeError("JWT_EXPIRE_DAYS must be a plain integer (e.g. 30)")
-    delta = expires_delta if expires_delta is not None else timedelta(days=expire_days)
-    payload = {"sub": user_id, "exp": datetime.now(UTC) + delta}
-    return jwt.encode(payload, _jwt_secret(), algorithm="HS256")
-
-
-async def get_current_user(token: str = Depends(oauth2_scheme)) -> str:
-    exc = HTTPException(
-        status_code=401,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(token, _jwt_secret(), algorithms=["HS256"])
-        user_id: str | None = payload.get("sub")
-        if not user_id:
-            raise exc
-    except jwt.PyJWTError:
-        raise exc
-    return user_id
 
 
 def initialize_data() -> None:
@@ -171,34 +75,13 @@ def initialize_data() -> None:
             },
         )
 
-    if not _credentials_path().exists():
-        initial_creds: dict[str, str] = {}
-        for key, value in os.environ.items():
-            if key.startswith("INITIAL_PASSWORD_") and value:
-                user_id = key[len("INITIAL_PASSWORD_") :]
-                if _USER_ID_RE.fullmatch(user_id):
-                    initial_creds[user_id] = hash_password(value)
-        if initial_creds:
-            _write_credentials(initial_creds)
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    _jwt_secret()  # raises RuntimeError if not set
     initialize_data()
     yield
 
 
 app = FastAPI(title="Fitness Tracker API", version="0.1.0", lifespan=lifespan)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[os.getenv("ALLOWED_ORIGIN", "http://localhost:3000")],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 
 # Data models
 class User(BaseModel):
@@ -223,7 +106,6 @@ class WorkoutEntry(BaseModel):
     exercise_id: str
     sets: list[WorkoutSet]
     date: str
-    user_id: str
 
     @field_validator("date")
     @classmethod
@@ -235,19 +117,6 @@ class WorkoutEntry(BaseModel):
         except ValueError:
             raise ValueError("date must be a valid calendar date")
         return v
-
-    @field_validator("user_id")
-    @classmethod
-    def validate_user_id(cls, v: str) -> str:
-        if not _USER_ID_RE.fullmatch(v):
-            raise ValueError("user_id contains invalid characters")
-        return v
-
-
-class LoginRequest(BaseModel):
-    user_id: str
-    password: str
-
 
 def _all_exercise_ids() -> set:
     data = storage.read_json(storage.DATA_DIR / "exercises.json")
@@ -264,56 +133,31 @@ async def health():
     return {"status": "ok"}
 
 
-@app.get("/users")
-async def get_users():
-    try:
-        return storage.read_json(storage.DATA_DIR / "users.json")
-    except OSError:
-        raise HTTPException(status_code=500, detail="Could not read user data")
+@app.get("/hub")
+async def hub_links():
+    """Where the family hub is, for the page: its login, and its logout (which ends the login for every app)."""
+    login_url = hub.client.public_url()
+    return {"login_url": login_url, "logout_url": f"{login_url}/logout"}
+
+
+@app.get("/me")
+def me(person: CurrentPerson):
+    return {"id": person.id, "name": person.name}
 
 
 @app.get("/exercises")
-async def get_exercises(current_user: str = Depends(get_current_user)):
+def get_exercises(person: CurrentPerson):
     try:
         return storage.read_json(storage.DATA_DIR / "exercises.json")
     except OSError:
         raise HTTPException(status_code=500, detail="Could not read exercise data")
 
 
-_AUTH_ERROR = HTTPException(
-    status_code=401,
-    detail="Incorrect user ID or password",
-    headers={"WWW-Authenticate": "Bearer"},
-)
-
-
-@app.post("/login")
-async def login(request: LoginRequest):
-    creds = _read_credentials()
-    stored_hash = creds.get(request.user_id)
-    if not stored_hash or not verify_password(request.password, stored_hash):
-        raise _AUTH_ERROR
-    return {
-        "access_token": create_access_token(request.user_id),
-        "token_type": "bearer",
-    }
-
-
 @app.post("/workouts")
 # Plain def: FastAPI runs it in a worker thread, so the file lock and file I/O don't block the event loop
 def log_workout(
-    entry: WorkoutEntry, current_user: str = Depends(get_current_user)
+    entry: WorkoutEntry, person: CurrentPerson
 ):
-    _assert_own_resource(current_user, entry.user_id)
-
-    try:
-        user_data = storage.read_json(storage.DATA_DIR / "users.json")
-    except OSError:
-        raise HTTPException(status_code=500, detail="Could not read user data")
-
-    if not any(u["id"] == entry.user_id for u in user_data["users"]):
-        raise HTTPException(status_code=404, detail="User not found")
-
     try:
         exercise_ids = _all_exercise_ids()
     except OSError:
@@ -322,7 +166,7 @@ def log_workout(
     if entry.exercise_id not in exercise_ids:
         raise HTTPException(status_code=404, detail="Exercise not found")
 
-    user_workout_dir = storage.DATA_DIR / "workouts" / entry.user_id
+    user_workout_dir = storage.DATA_DIR / "workouts" / person.id
     user_workout_dir.mkdir(parents=True, exist_ok=True)
     workout_file = user_workout_dir / f"{entry.date}.json"
 
@@ -352,17 +196,14 @@ def log_workout(
 
 @app.get("/workouts")
 async def list_workout_dates(
-    user_id: str = Query(...),
+    person: CurrentPerson,
     date_from: str = Query(...),
     date_to: str = Query(...),
-    current_user: str = Depends(get_current_user),
 ) -> dict:
-    _safe_user_id(user_id)
-    _assert_own_resource(current_user, user_id)
     _safe_date(date_from)
     _safe_date(date_to)
 
-    workout_dir = storage.DATA_DIR / "workouts" / user_id
+    workout_dir = storage.DATA_DIR / "workouts" / person.id
     if not workout_dir.exists():
         return {"dates": []}
 
@@ -382,13 +223,10 @@ async def list_workout_dates(
 
 @app.get("/records")
 async def get_records(
-    user_id: str = Query(...),
-    current_user: str = Depends(get_current_user),
+    person: CurrentPerson,
 ) -> dict:
-    _safe_user_id(user_id)
-    _assert_own_resource(current_user, user_id)
 
-    workout_dir = storage.DATA_DIR / "workouts" / user_id
+    workout_dir = storage.DATA_DIR / "workouts" / person.id
     if not workout_dir.exists():
         return {"records": []}
 
@@ -425,14 +263,11 @@ async def get_records(
 @app.get("/workouts/{date}")
 async def get_workout(
     date: str,
-    user_id: str = Query(...),
-    current_user: str = Depends(get_current_user),
+    person: CurrentPerson,
 ):
     _safe_date(date)
-    _safe_user_id(user_id)
-    _assert_own_resource(current_user, user_id)
 
-    workout_file = storage.DATA_DIR / "workouts" / user_id / f"{date}.json"
+    workout_file = storage.DATA_DIR / "workouts" / person.id / f"{date}.json"
     if not workout_file.exists():
         return {"date": date, "exercises": []}
 
