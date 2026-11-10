@@ -4,8 +4,10 @@ import json
 from types import SimpleNamespace
 
 import pytest
+from fastapi.testclient import TestClient
 
-from backend import hub, hub_people, storage
+from backend import hub, hub_people, link_user, storage
+from backend.main import app
 
 
 def users() -> list[dict]:
@@ -162,9 +164,7 @@ class TestPeopleSync:
         assert hub_people.local_id(1) == "hub1"
 
 
-from fastapi.testclient import TestClient
 
-from backend.main import app
 
 client = TestClient(app)
 
@@ -291,3 +291,47 @@ class TestOwnWorkouts:
         old.write_text(json.dumps({"date": "2026-01-05", "exercises": [{"exercise_id": "planks", "sets": []}]}))
         day = client.get("/workouts/2026-01-05", headers=login("Andreas")).json()
         assert [e["exercise_id"] for e in day["exercises"]] == ["planks"]
+
+
+
+class TestLinkUser:
+    def test_links_entry(self, capsys):
+        write_users([old_user("user1", "Andreas"), old_user("user2", "Family Member")])
+        assert link_user.main(["user2", "5"]) == 0
+        assert by_id("user2")["hub_id"] == 5
+        assert by_id("user2")["is_active"] is True
+        assert "Linked user2 to hub person 5" in capsys.readouterr().out
+
+    def test_linked_entry_is_used_at_login(self, login):
+        write_users([old_user("user2", "Family Member")])
+        assert link_user.main(["user2", "1"]) == 0
+        assert client.get("/me", headers=login("Lena")).json() == {"id": "user2", "name": "Lena"}
+
+    def test_unknown_user_id(self):
+        write_users([old_user("user1", "Andreas")])
+        before = storage.users_path().read_bytes()
+        assert link_user.main(["ghost", "5"]) == 1
+        assert storage.users_path().read_bytes() == before
+
+    def test_hub_id_taken(self):
+        write_users([{**old_user("user1", "Andreas"), "hub_id": 5}, old_user("user2", "Family Member")])
+        before = storage.users_path().read_bytes()
+        assert link_user.main(["user2", "5"]) == 1
+        assert storage.users_path().read_bytes() == before
+
+    def test_unused_hub_entry_makes_way(self, data_dir):
+        write_users([old_user("user2", "Family Member"), {**old_user("hub5", "Lena"), "hub_id": 5, "is_active": True}])
+        assert link_user.main(["user2", "5"]) == 0
+        assert [u["id"] for u in users()] == ["user2"]
+        assert by_id("user2")["hub_id"] == 5
+
+    def test_hub_entry_with_workouts_stays(self, data_dir):
+        write_users([old_user("user2", "Family Member"), {**old_user("hub5", "Lena"), "hub_id": 5, "is_active": True}])
+        (data_dir / "workouts" / "hub5").mkdir(parents=True)
+        before = storage.users_path().read_bytes()
+        assert link_user.main(["user2", "5"]) == 1
+        assert storage.users_path().read_bytes() == before
+
+    @pytest.mark.parametrize("argv", [[], ["user2"], ["user2", "x"], ["user2", "5", "extra"]])
+    def test_bad_arguments(self, argv):
+        assert link_user.main(argv) == 2
