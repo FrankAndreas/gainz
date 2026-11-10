@@ -80,6 +80,23 @@ h3 {
   justify-content: center;
 }
 
+/* "No access" and "The family hub can't be reached": a short message in the middle of the screen */
+.hub-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 0 1rem;
+  text-align: center;
+}
+
+.hub-page p {
+  color: var(--text-secondary);
+  max-width: 28rem;
+}
+
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
