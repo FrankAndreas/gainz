@@ -52,11 +52,6 @@ def request_login(request: Request) -> tuple[hub.Login | None, bool]:
     return (hub.Login(cookie), True) if cookie else (None, False)
 
 
-def _linked(hub_person: hub.HubPerson) -> dict | None:
-    found = hub_people.entry(hub_person.id)
-    return found if found is not None and found["name"] == hub_person.name else None
-
-
 def get_current_person(request: Request, response: Response) -> Person:
     """The person behind the request's hub login. A plain def: FastAPI runs it in a worker thread, so asking the hub
     and reading users.json don't block the event loop."""
@@ -74,15 +69,16 @@ def get_current_person(request: Request, response: Response) -> Person:
         if not session.access:
             raise api_error(status.HTTP_403_FORBIDDEN, "no_access")
         hub_people.refresh(login)
-        found = _linked(session.person)
-        if found is None:
-            # Given access a moment ago, or renamed: the people kept here are older than that
+        found = hub_people.entry(session.person.id)
+        if found is None or found["name"] != session.person.name:
+            # Given access a moment ago, or renamed: the people kept here may be older than that. A name that still
+            # differs afterwards is the client's kept session (up to a minute old), not a reason to refuse
             hub_people.refresh(login, force=True)
-            found = _linked(session.person)
+            found = hub_people.entry(session.person.id)
         if found is None:
             # Another request of theirs was refreshing at the same moment: wait for it, then look again
             hub_people.wait_for_running(hub.TIMEOUT_SECONDS)
-            found = _linked(session.person)
+            found = hub_people.entry(session.person.id)
     except hub.HubUnavailable as error:
         logger.warning("The family hub can't be reached (%s)", error)
         raise api_error(status.HTTP_503_SERVICE_UNAVAILABLE, "hub_unavailable") from None

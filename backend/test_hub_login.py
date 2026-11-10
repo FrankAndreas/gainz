@@ -100,6 +100,16 @@ class TestPeopleSync:
         assert by_id("user2").get("hub_id") is None
         assert hub_people.local_id(4) == "hub4"
 
+    def test_new_person_never_takes_an_existing_id(self, fake_hub):
+        """An entry already called hub5 (linked to someone else, or not at all) keeps its folder to itself."""
+        write_users([{**old_user("hub5", "Lena"), "hub_id": 7, "is_active": True}])
+        token = fake_hub.add("Lena", id=7)
+        fake_hub.add("Kim", id=5)
+        refresh(token)
+        assert [u["id"] for u in users()].count("hub5") == 1
+        assert hub_people.local_id(7) == "hub5"
+        assert hub_people.local_id(5) not in (None, "hub5")
+
     def test_rename_follows_hub(self, fake_hub):
         fake_hub.add("Andreas", id=1)
         refresh("tok-Andreas")
@@ -251,6 +261,17 @@ class TestLogin:
         fake_hub.rename("Andreas", "Andi")
         assert client.get("/me", headers={"Authorization": "Bearer tok-Andi"}).json()["name"] == "Andi"
 
+    def test_rename_while_session_kept(self, login, fake_hub, monkeypatch):
+        """The client keeps Bob's session (old name) for a minute; someone else's request already synced the new name."""
+        bob = login("Bob")
+        assert client.get("/me", headers=bob).status_code == 200
+        monkeypatch.setattr(hub.client, "forget", lambda login=None: None)
+        fake_hub.rename("Bob", "Bobby")
+        assert client.get("/me", headers=login("Carol")).status_code == 200
+        r = client.get("/me", headers=bob)
+        assert r.status_code == 200
+        assert r.json() == {"id": "hub1", "name": "Bobby"}
+
     def test_hub_links(self, monkeypatch):
         monkeypatch.setenv("HUB_PUBLIC_URL", "https://home.local.example")
         assert client.get("/hub").json() == {
@@ -294,21 +315,45 @@ class TestOwnWorkouts:
 
 
 
+def synced(entry: dict, hub_id: int) -> dict:
+    return {**entry, "hub_id": hub_id, "is_active": True}
+
+
 class TestLinkUser:
-    def test_links_entry(self, capsys):
+    def test_refuses_before_first_sync(self):
+        """Linking by hand before the first login would stop the first sync from linking the others by name."""
         write_users([old_user("user1", "Andreas"), old_user("user2", "Family Member")])
+        before = storage.users_path().read_bytes()
+        assert link_user.main(["user2", "4"]) == 1
+        assert storage.users_path().read_bytes() == before
+
+    def test_refuses_target_linked_to_someone_else(self):
+        write_users([synced(old_user("user1", "Andreas"), 3), old_user("user2", "Family Member")])
+        before = storage.users_path().read_bytes()
+        assert link_user.main(["user1", "4"]) == 1
+        assert storage.users_path().read_bytes() == before
+
+    def test_refuses_another_hub_entry_as_target(self):
+        write_users([synced(old_user("hub5", "Lena"), 5), synced(old_user("hub7", "Kim"), 7)])
+        before = storage.users_path().read_bytes()
+        assert link_user.main(["hub5", "7"]) == 1
+        assert storage.users_path().read_bytes() == before
+
+    def test_links_entry(self, capsys):
+        write_users([synced(old_user("user1", "Andreas"), 1), old_user("user2", "Family Member")])
         assert link_user.main(["user2", "5"]) == 0
         assert by_id("user2")["hub_id"] == 5
         assert by_id("user2")["is_active"] is True
         assert "Linked user2 to hub person 5" in capsys.readouterr().out
 
     def test_linked_entry_is_used_at_login(self, login):
-        write_users([old_user("user2", "Family Member")])
-        assert link_user.main(["user2", "1"]) == 0
+        write_users([synced(old_user("user1", "Andreas"), 1), old_user("user2", "Family Member")])
+        assert link_user.main(["user2", "2"]) == 0
+        login("Andreas")
         assert client.get("/me", headers=login("Lena")).json() == {"id": "user2", "name": "Lena"}
 
     def test_unknown_user_id(self):
-        write_users([old_user("user1", "Andreas")])
+        write_users([synced(old_user("user1", "Andreas"), 1)])
         before = storage.users_path().read_bytes()
         assert link_user.main(["ghost", "5"]) == 1
         assert storage.users_path().read_bytes() == before

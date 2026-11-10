@@ -40,7 +40,8 @@ hub's client package. The user said "go" to the proposed plan, so points marked 
      the same name (case and surrounding spaces ignored). After that nothing is linked by name: a new person with an
      old name must not take over someone's workouts.
    - For a name that doesn't match (the seeded "Family Member"): `python backend/link_user.py <user id> <hub id>` on
-     the NAS. It refuses a hub id already linked to someone else.
+     the NAS, after the first login. It refuses a hub id already linked to someone else, an entry already linked to
+     another hub person, and another hub person's `hub<id>` entry; a new person never gets an id that is taken.
 4. **Removed in the hub:** the person is hidden (`is_active` false), their workouts stay **(my call:** deleting their
    data is done by hand on the NAS; the app has no admin page).
 5. **The API uses the login's person (my call):** the `user_id` query parameter and body field go away; the backend
@@ -103,5 +104,5 @@ Validation errors (400/404/422/500) keep their current form.
    `INITIAL_PASSWORD_*` go away.
 3. In the hub (Einstellungen → Apps): a tile with home address `https://fitness.local.<domain>`, no outside address,
    key `fitness`, the people who may use it.
-4. Before the first login: hub names match `users.json`, or run `link_user.py`. Afterwards delete
-   `data/credentials.json`.
+4. Before the first login: hub names match `users.json`. After it, `link_user.py` for anyone whose name didn't match
+   (it refuses to run before the first login, which would stop the name linking). Then delete `data/credentials.json`.

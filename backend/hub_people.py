@@ -101,6 +101,16 @@ def _link_by_name(entries: list[dict], people: list[hub.HubPerson]) -> dict[int,
     }
 
 
+def _free_id(entries: list[dict], wanted: str) -> str:
+    """`wanted`, or wanted-2, -3, ... if an entry already has it: two people must never share a workouts folder."""
+    taken = {found["id"] for found in entries}
+    candidate, n = wanted, 1
+    while candidate in taken:
+        n += 1
+        candidate = f"{wanted}-{n}"
+    return candidate
+
+
 def _apply(data: dict, people: list[hub.HubPerson]) -> None:
     entries: list[dict] = data.setdefault("users", [])
     linked = {found["hub_id"]: found for found in entries if found.get("hub_id") is not None}
@@ -110,7 +120,7 @@ def _apply(data: dict, people: list[hub.HubPerson]) -> None:
     for person in people:
         found = linked.get(person.id)
         if found is None:
-            found = {"id": f"hub{person.id}", "created": datetime.now().isoformat()}
+            found = {"id": _free_id(entries, f"hub{person.id}"), "created": datetime.now().isoformat()}
             entries.append(found)
         found["name"] = person.name
         found["hub_id"] = person.id
