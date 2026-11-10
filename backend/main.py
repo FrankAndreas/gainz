@@ -13,24 +13,12 @@ from fastapi.security import OAuth2PasswordBearer
 from filelock import FileLock
 from pydantic import BaseModel, field_validator
 
+from backend import storage
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
-DATA_DIR = Path(__file__).parent / "data"
 _USER_ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-
-
-def _read_json(path: Path) -> dict:
-    with FileLock(str(path) + ".lock"), open(path, "r") as f:
-        return json.load(f)
-
-
-def _write_json(path: Path, data: dict) -> None:
-    tmp = Path(str(path) + ".tmp")
-    with FileLock(str(path) + ".lock"):
-        with open(tmp, "w") as f:
-            json.dump(data, f, indent=2)
-        os.replace(tmp, path)
 
 
 def _safe_user_id(user_id: str) -> str:
@@ -57,7 +45,7 @@ def _assert_own_resource(current_user: str, requested_user_id: str) -> None:
 
 
 def _credentials_path() -> Path:
-    return DATA_DIR / "credentials.json"
+    return storage.DATA_DIR / "credentials.json"
 
 
 def _read_credentials() -> dict:
@@ -134,31 +122,15 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> str:
 
 
 def initialize_data() -> None:
-    DATA_DIR.mkdir(exist_ok=True)
-    users_file = DATA_DIR / "users.json"
-    exercises_file = DATA_DIR / "exercises.json"
+    storage.DATA_DIR.mkdir(exist_ok=True)
+    users_file = storage.DATA_DIR / "users.json"
+    exercises_file = storage.DATA_DIR / "exercises.json"
 
     if not users_file.exists():
-        _write_json(
-            users_file,
-            {
-                "users": [
-                    {
-                        "id": "user1",
-                        "name": "Andreas",
-                        "created": datetime.now().isoformat(),
-                    },
-                    {
-                        "id": "user2",
-                        "name": "Family Member",
-                        "created": datetime.now().isoformat(),
-                    },
-                ]
-            },
-        )
+        storage.write_json(users_file, {"users": []})
 
     if not exercises_file.exists():
-        _write_json(
+        storage.write_json(
             exercises_file,
             {
                 "bodyweight": [
@@ -278,7 +250,7 @@ class LoginRequest(BaseModel):
 
 
 def _all_exercise_ids() -> set:
-    data = _read_json(DATA_DIR / "exercises.json")
+    data = storage.read_json(storage.DATA_DIR / "exercises.json")
     return {ex["id"] for exercises in data.values() for ex in exercises}
 
 
@@ -295,7 +267,7 @@ async def health():
 @app.get("/users")
 async def get_users():
     try:
-        return _read_json(DATA_DIR / "users.json")
+        return storage.read_json(storage.DATA_DIR / "users.json")
     except OSError:
         raise HTTPException(status_code=500, detail="Could not read user data")
 
@@ -303,7 +275,7 @@ async def get_users():
 @app.get("/exercises")
 async def get_exercises(current_user: str = Depends(get_current_user)):
     try:
-        return _read_json(DATA_DIR / "exercises.json")
+        return storage.read_json(storage.DATA_DIR / "exercises.json")
     except OSError:
         raise HTTPException(status_code=500, detail="Could not read exercise data")
 
@@ -335,7 +307,7 @@ def log_workout(
     _assert_own_resource(current_user, entry.user_id)
 
     try:
-        user_data = _read_json(DATA_DIR / "users.json")
+        user_data = storage.read_json(storage.DATA_DIR / "users.json")
     except OSError:
         raise HTTPException(status_code=500, detail="Could not read user data")
 
@@ -350,7 +322,7 @@ def log_workout(
     if entry.exercise_id not in exercise_ids:
         raise HTTPException(status_code=404, detail="Exercise not found")
 
-    user_workout_dir = DATA_DIR / "workouts" / entry.user_id
+    user_workout_dir = storage.DATA_DIR / "workouts" / entry.user_id
     user_workout_dir.mkdir(parents=True, exist_ok=True)
     workout_file = user_workout_dir / f"{entry.date}.json"
 
@@ -390,7 +362,7 @@ async def list_workout_dates(
     _safe_date(date_from)
     _safe_date(date_to)
 
-    workout_dir = DATA_DIR / "workouts" / user_id
+    workout_dir = storage.DATA_DIR / "workouts" / user_id
     if not workout_dir.exists():
         return {"dates": []}
 
@@ -416,7 +388,7 @@ async def get_records(
     _safe_user_id(user_id)
     _assert_own_resource(current_user, user_id)
 
-    workout_dir = DATA_DIR / "workouts" / user_id
+    workout_dir = storage.DATA_DIR / "workouts" / user_id
     if not workout_dir.exists():
         return {"records": []}
 
@@ -426,7 +398,7 @@ async def get_records(
         for entry in sorted(workout_dir.iterdir()):
             if not _DATE_RE.fullmatch(entry.stem):
                 continue
-            day = _read_json(entry)
+            day = storage.read_json(entry)
             for exercise in day.get("exercises", []):
                 ex_id = exercise["exercise_id"]
                 rec = records.setdefault(ex_id, {"max_reps": 0, "max_weight": None})
@@ -460,11 +432,11 @@ async def get_workout(
     _safe_user_id(user_id)
     _assert_own_resource(current_user, user_id)
 
-    workout_file = DATA_DIR / "workouts" / user_id / f"{date}.json"
+    workout_file = storage.DATA_DIR / "workouts" / user_id / f"{date}.json"
     if not workout_file.exists():
         return {"date": date, "exercises": []}
 
     try:
-        return _read_json(workout_file)
+        return storage.read_json(workout_file)
     except OSError:
         raise HTTPException(status_code=500, detail="Could not read workout data")

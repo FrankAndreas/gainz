@@ -7,17 +7,25 @@ import jwt
 import pytest
 from fastapi.testclient import TestClient
 
+from backend import storage
 from backend.main import app, create_access_token, hash_password, verify_password
 
 
 @pytest.fixture(autouse=True)
 def tmp_data_dir(tmp_path, monkeypatch):
     """Run each test against a fresh temporary data directory."""
-    import backend.main as m
+    from backend import storage
 
     monkeypatch.setenv("JWT_SECRET", "test-secret-key-for-tests-only")
-    m.DATA_DIR = tmp_path
-    m.initialize_data()
+    storage.write_json(
+        storage.users_path(),
+        {
+            "users": [
+                {"id": "user1", "name": "Andreas", "created": "2026-01-01T00:00:00"},
+                {"id": "user2", "name": "Family Member", "created": "2026-01-01T00:00:00"},
+            ]
+        },
+    )
     yield
 
 
@@ -262,7 +270,7 @@ class TestGetWorkout:
             },
             headers=auth_headers(),
         )
-        with patch("backend.main._read_json", side_effect=OSError("disk full")):
+        with patch("backend.storage.read_json", side_effect=OSError("disk full")):
             r = client.get(
                 "/workouts/2026-01-15",
                 params={"user_id": "user1"},
@@ -506,7 +514,7 @@ class TestGetRecords:
             },
             headers=auth_headers(),
         )
-        with patch("backend.main._read_json", side_effect=OSError("disk full")):
+        with patch("backend.storage.read_json", side_effect=OSError("disk full")):
             r = client.get(
                 "/records", params={"user_id": "user1"}, headers=auth_headers()
             )
@@ -518,7 +526,7 @@ def with_credentials(monkeypatch, tmp_path):
     import backend.main as m
 
     monkeypatch.setenv("JWT_SECRET", "test-secret-key-for-tests-only")
-    m.DATA_DIR = tmp_path
+    storage.DATA_DIR = tmp_path
     m.initialize_data()
     m._write_credentials(
         {
@@ -672,7 +680,7 @@ class TestCredentialInit:
         monkeypatch.setenv("JWT_SECRET", "test-secret")
         monkeypatch.setenv("INITIAL_PASSWORD_user1", "secret1")
         monkeypatch.setenv("INITIAL_PASSWORD_user2", "secret2")
-        m.DATA_DIR = tmp_path
+        storage.DATA_DIR = tmp_path
         m.initialize_data()
         creds = m._read_credentials()
         assert "user1" in creds
@@ -685,7 +693,7 @@ class TestCredentialInit:
 
         monkeypatch.setenv("JWT_SECRET", "test-secret")
         monkeypatch.setenv("INITIAL_PASSWORD_user1", "original")
-        m.DATA_DIR = tmp_path
+        storage.DATA_DIR = tmp_path
         m.initialize_data()
         original_hash = m._read_credentials()["user1"]
         monkeypatch.setenv("INITIAL_PASSWORD_user1", "changed")
@@ -696,7 +704,7 @@ class TestCredentialInit:
         import backend.main as m
 
         monkeypatch.setenv("JWT_SECRET", "test-secret")
-        m.DATA_DIR = tmp_path
+        storage.DATA_DIR = tmp_path
         m.initialize_data()
         assert not m._credentials_path().exists()
 
@@ -705,7 +713,7 @@ class TestCredentialInit:
 
         monkeypatch.setenv("JWT_SECRET", "test-secret")
         monkeypatch.setenv("INITIAL_PASSWORD_user1", "x" * 73)
-        m.DATA_DIR = tmp_path
+        storage.DATA_DIR = tmp_path
         with pytest.raises(ValueError, match="72 bytes"):
             m.initialize_data()
         assert not m._credentials_path().exists()
@@ -775,17 +783,17 @@ class TestErrorHandling:
     """OSError paths — simulated disk failures."""
 
     def test_get_users_io_error_returns_500(self):
-        with patch("backend.main._read_json", side_effect=OSError("disk full")):
+        with patch("backend.storage.read_json", side_effect=OSError("disk full")):
             r = client.get("/users")
         assert r.status_code == 500
 
     def test_get_exercises_io_error_returns_500(self):
-        with patch("backend.main._read_json", side_effect=OSError("disk full")):
+        with patch("backend.storage.read_json", side_effect=OSError("disk full")):
             r = client.get("/exercises", headers=auth_headers())
         assert r.status_code == 500
 
     def test_log_workout_user_read_failure_returns_500(self):
-        with patch("backend.main._read_json", side_effect=OSError("disk full")):
+        with patch("backend.storage.read_json", side_effect=OSError("disk full")):
             r = client.post(
                 "/workouts",
                 json={
@@ -799,16 +807,14 @@ class TestErrorHandling:
         assert r.status_code == 500
 
     def test_log_workout_exercise_read_failure_returns_500(self):
-        import backend.main as m
-
-        real_read = m._read_json
+        real_read = storage.read_json
 
         def fail_on_exercises(path):
             if "exercises" in str(path):
                 raise OSError("disk full")
             return real_read(path)
 
-        with patch("backend.main._read_json", side_effect=fail_on_exercises):
+        with patch("backend.storage.read_json", side_effect=fail_on_exercises):
             r = client.post(
                 "/workouts",
                 json={

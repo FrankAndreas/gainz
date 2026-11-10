@@ -5,6 +5,8 @@ python-multipart==0.0.33
 filelock==4.2.9
 bcrypt==5.0.0
 PyJWT==2.15.1
+# The family hub's client (family-hub/client), pinned to a commit like the sibling apps; the images have no git
+family-hub-client @ https://github.com/FrankAndreas/family-hub/archive/62f20a6de5eaf2ca7c8823d4783842696ab607df.tar.gz#subdirectory=client
 
 # dev / test
 pytest==9.2.0
