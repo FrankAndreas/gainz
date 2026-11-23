@@ -1,8 +1,8 @@
-fastapi==0.162.5
+fastapi==0.165.0
 uvicorn[standard]==0.54.0
-pydantic==2.14.3
-python-multipart==0.0.33
-filelock==4.2.10
+pydantic==2.14.4
+python-multipart==0.0.34
+filelock==4.2.12
 # The family hub's client (family-hub/client), pinned to a commit like the sibling apps; the images have no git
 family-hub-client @ https://github.com/FrankAndreas/family-hub/archive/668674a7d8f1381ca38b2139814108ee88282590.tar.gz#subdirectory=client
 
