@@ -195,7 +195,13 @@ class TestLogin:
     def test_bearer_login_me(self, login):
         r = client.get("/me", headers=login("Andreas"))
         assert r.status_code == 200
-        assert r.json() == {"id": "hub1", "name": "Andreas"}
+        assert r.json() == {"id": "hub1", "name": "Andreas", "theme": "aurora"}
+
+    def test_theme_follows_the_hub(self, login, fake_hub):
+        assert client.get("/me", headers=login("Andreas")).json()["theme"] == "aurora"
+        # Passed on as the hub sends it: the page decides what it can show
+        fake_hub.set_theme("Andreas", "daely")
+        assert client.get("/me", headers=login("Andreas")).json()["theme"] == "daely"
 
     def test_cookie_login_get(self, login, cookie_client):
         login("Andreas")
@@ -270,7 +276,7 @@ class TestLogin:
         assert client.get("/me", headers=login("Carol")).status_code == 200
         r = client.get("/me", headers=bob)
         assert r.status_code == 200
-        assert r.json() == {"id": "hub1", "name": "Bobby"}
+        assert r.json() == {"id": "hub1", "name": "Bobby", "theme": "aurora"}
 
     def test_hub_links(self, monkeypatch):
         monkeypatch.setenv("HUB_PUBLIC_URL", "https://home.local.example")
@@ -350,7 +356,7 @@ class TestLinkUser:
         write_users([synced(old_user("user1", "Andreas"), 1), old_user("user2", "Family Member")])
         assert link_user.main(["user2", "2"]) == 0
         login("Andreas")
-        assert client.get("/me", headers=login("Lena")).json() == {"id": "user2", "name": "Lena"}
+        assert client.get("/me", headers=login("Lena")).json() == {"id": "user2", "name": "Lena", "theme": "aurora"}
 
     def test_unknown_user_id(self):
         write_users([synced(old_user("user1", "Andreas"), 1)])

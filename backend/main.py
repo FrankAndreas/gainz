@@ -142,7 +142,7 @@ async def hub_links():
 
 @app.get("/me")
 def me(person: CurrentPerson):
-    return {"id": person.id, "name": person.name}
+    return {"id": person.id, "name": person.name, "theme": person.theme}
 
 
 @app.get("/exercises")

@@ -1,3 +1,5 @@
+import { applyTheme } from 'family-hub-theme';
+import { BUTTON, BUTTON_SECONDARY, BUTTON_SMALL, CARD, FIELD, FIELD_BASE, H1, H2, HUB_PAGE, LABEL, PANEL, PANEL_HEADING, STAT_CARD, STAT_GRID, STAT_NAME, STAT_SUB, STAT_SUB_RECORD, TITLE } from './ui';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import axios from 'axios';
 import {
@@ -88,6 +90,8 @@ const App: React.FC = () => {
   }, []);
 
   const handleLogout = () => {
+    // The hub's login page comes next: the default look there, not this person's
+    applyTheme(null);
     if (links) goTo(`${links.logout_url}?next=${encodeURIComponent(window.location.origin)}`);
   };
 
@@ -103,6 +107,8 @@ const App: React.FC = () => {
       return true;
     }
     if (code === 'no_access' || code === 'hub_unavailable') {
+      // Nobody logged in here: the default look
+      applyTheme(null);
       setStatus(code);
       return true;
     }
@@ -123,6 +129,7 @@ const App: React.FC = () => {
         const [{ me: person, renew }, exerciseList] = await Promise.all([fetchMe(), fetchExercises()]);
         if (!current) return;
         setMe(person);
+        applyTheme(person.theme);
         setExercises(exerciseList);
         setStatus('ready');
         // The hub login is in its last week: once through the hub, which renews it and sends the browser back
@@ -226,10 +233,10 @@ const App: React.FC = () => {
 
   if (status === 'no_access') {
     return (
-      <main className="hub-page">
-        <h1>No access</h1>
-        <p>You don't have access to the fitness tracker.</p>
-        <button className="btn btn-primary" onClick={logInAsSomeoneElse} type="button">
+      <main className={HUB_PAGE}>
+        <h1 className={H1}>No access</h1>
+        <p className="max-w-md text-muted">You don't have access to the fitness tracker.</p>
+        <button className={BUTTON} onClick={logInAsSomeoneElse} type="button">
           Log in as someone else
         </button>
       </main>
@@ -238,11 +245,11 @@ const App: React.FC = () => {
 
   if (status === 'hub_unavailable') {
     return (
-      <main className="hub-page">
-        <h1>The family hub can't be reached</h1>
-        <p>Logging in goes through the family hub. Try again in a moment.</p>
+      <main className={HUB_PAGE}>
+        <h1 className={H1}>The family hub can't be reached</h1>
+        <p className="max-w-md text-muted">Logging in goes through the family hub. Try again in a moment.</p>
         <button
-          className="btn btn-primary"
+          className={BUTTON}
           onClick={() => { setStatus('loading'); setAttempt(a => a + 1); }}
           type="button"
         >
@@ -253,33 +260,33 @@ const App: React.FC = () => {
   }
 
   if (status === 'loading') {
-    return <div className="loading-screen"><div className="spinner" aria-label="Loading" /></div>;
+    return <div className="flex min-h-screen items-center justify-center"><div className="h-9 w-9 animate-spin rounded-full border-[3px] border-line border-t-accent-3" aria-label="Loading" /></div>;
   }
 
   return (
-    <div className="app">
-      <header className="header">
-        <h1>Fitness Tracker</h1>
-        <div className="header-user">
+    <div className="mx-auto max-w-[800px] p-5">
+      <header className={CARD}>
+        <h1 className={TITLE}>Fitness Tracker</h1>
+        <div className="mt-2 flex items-center gap-3 text-sm text-muted">
           <span>{me?.name}</span>
-          <button className="btn btn-secondary btn-sm" onClick={handleLogout} type="button">
+          <button className={BUTTON_SMALL} onClick={handleLogout} type="button">
             Sign out
           </button>
         </div>
       </header>
 
-      <div className="workout-form">
-        <h2>Log Workout <span className="log-date-label">— {selectedDateLabel}</span></h2>
+      <div className={CARD}>
+        <h2 className={`${H2} mt-0`}>Log Workout <span className="text-sm font-normal text-muted">— {selectedDateLabel}</span></h2>
 
         {message && (
-          <div className={`message ${message.isError ? 'message-error' : 'message-success'}`}>
+          <div role={message.isError ? 'alert' : 'status'} className={`mb-5 rounded-xl border px-4 py-3 font-medium ${message.isError ? 'border-danger/40 bg-danger/15 text-danger' : 'border-success/40 bg-success/15 text-success'}`}>
             {message.text}
           </div>
         )}
 
-        <div className="form-group">
-          <label htmlFor="exercise-select">Exercise:</label>
-          <select id="exercise-select" value={selectedExercise} onChange={(e) => setSelectedExercise(e.target.value)}>
+        <div className="mb-4">
+          <label htmlFor="exercise-select" className={LABEL}>Exercise:</label>
+          <select id="exercise-select" className={FIELD} value={selectedExercise} onChange={(e) => setSelectedExercise(e.target.value)}>
             <option value="">Select an exercise...</option>
             {Object.entries(exercises).map(([category, exs]) => (
               <optgroup key={category} label={category.charAt(0).toUpperCase() + category.slice(1)}>
@@ -291,19 +298,19 @@ const App: React.FC = () => {
           </select>
         </div>
 
-        <div className="form-row">
-          <div className="form-group">
-            <label htmlFor="reps-input">{selectedExerciseUnit === 'seconds' ? 'Duration (seconds):' : 'Reps:'}</label>
-            <input id="reps-input" type="number" value={reps} onChange={(e) => setReps(e.target.value)}
+        <div className="mb-4 flex flex-wrap items-end gap-3">
+          <div className="min-w-[120px] flex-1 max-[480px]:basis-full">
+            <label htmlFor="reps-input" className={LABEL}>{selectedExerciseUnit === 'seconds' ? 'Duration (seconds):' : 'Reps:'}</label>
+            <input id="reps-input" className={FIELD} type="number" value={reps} onChange={(e) => setReps(e.target.value)}
               placeholder={selectedExerciseUnit === 'seconds' ? 'e.g. 30' : 'Number of reps'} min="1" />
           </div>
-          <div className="form-group">
-            <label htmlFor="weight-input">Weight (optional):</label>
-            <div className="weight-input-row">
-              <input id="weight-input" type="number" value={weight} onChange={(e) => setWeight(e.target.value)}
+          <div className="min-w-[120px] flex-1 max-[480px]:basis-full">
+            <label htmlFor="weight-input" className={LABEL}>Weight (optional):</label>
+            <div className="flex gap-1.5">
+              <input id="weight-input" className={`${FIELD_BASE} min-w-0 flex-1 px-3`} type="number" value={weight} onChange={(e) => setWeight(e.target.value)}
                 placeholder="e.g. 20" min="0" step="0.5" />
               <select
-                className="unit-select"
+                className={`${FIELD_BASE} flex-none cursor-pointer px-2.5`}
                 value={weightUnit}
                 onChange={(e) => {
                   const u = e.target.value as 'kg' | 'lbs';
@@ -317,72 +324,72 @@ const App: React.FC = () => {
               </select>
             </div>
           </div>
-          <button className="btn btn-secondary" onClick={addSet} type="button">Add Set</button>
+          <button className={BUTTON_SECONDARY} onClick={addSet} type="button">Add Set</button>
         </div>
 
         {(pendingSets.length > 0 || lastRemovedSet) && (
-          <div className="pending-sets">
-            <h3>Sets to log:</h3>
+          <div className={`${PANEL} mb-4`}>
+            <h3 className={PANEL_HEADING}>Sets to log:</h3>
             {pendingSets.map((set, i) => (
-              <div key={i} className="set-row">
+              <div key={i} className="flex items-center justify-between py-1 text-[15px]">
                 <span>Set {i + 1}: {set.reps} {selectedExerciseUnit}{set.weight != null ? ` @ ${set.weight} ${weightUnit}` : ''}</span>
-                <button className="btn-remove" onClick={() => removeSet(i)} aria-label="Remove set">×</button>
+                <button className="px-1 text-lg leading-none text-danger hover:opacity-80" onClick={() => removeSet(i)} aria-label="Remove set">×</button>
               </div>
             ))}
             {lastRemovedSet && (
-              <div className="undo-row">
+              <div className="flex items-center gap-2.5 py-1 text-[13px] text-muted">
                 <span>Set removed.</span>
-                <button className="btn-undo" onClick={undoRemoveSet}>Undo</button>
+                <button className="text-[13px] font-semibold text-accent-3 underline hover:text-ink" onClick={undoRemoveSet}>Undo</button>
               </div>
             )}
           </div>
         )}
 
-        <button className="btn" onClick={logWorkout} disabled={submitting || pendingSets.length === 0}>
+        <button className={BUTTON} onClick={logWorkout} disabled={submitting || pendingSets.length === 0}>
           {submitting ? 'Logging...' : 'Log Workout'}
         </button>
       </div>
 
-      <div className="workout-history">
-        <div className="week-nav">
-          <button className="btn btn-secondary" onClick={() => setWeekOffset(w => w - 1)} aria-label="Previous week">←</button>
-          <span className="week-label">Week of {new Date(weekDates[0] + 'T00:00:00').toLocaleDateString('en', { month: 'short', day: 'numeric' })}</span>
-          <button className="btn btn-secondary" onClick={() => setWeekOffset(w => w + 1)}
+      <div className={CARD}>
+        <div className="mb-3 flex items-center gap-3">
+          <button className={BUTTON_SECONDARY} onClick={() => setWeekOffset(w => w - 1)} aria-label="Previous week">←</button>
+          <span className="flex-1 text-center text-sm font-semibold text-ink">Week of {new Date(weekDates[0] + 'T00:00:00').toLocaleDateString('en', { month: 'short', day: 'numeric' })}</span>
+          <button className={BUTTON_SECONDARY} onClick={() => setWeekOffset(w => w + 1)}
             disabled={weekOffset >= 0} aria-label="Next week">→</button>
         </div>
 
-        <div className="week-strip">
+        <div className="mb-5 flex gap-1.5">
           {weekDates.map(date => (
-            <button key={date} className={`day-pill${date === selectedDate ? ' day-pill--active' : ''}`}
+            <button key={date} className={`flex min-w-0 flex-1 cursor-pointer flex-col items-center gap-1 rounded-[10px] border px-1 py-2 text-[13px] text-ink transition-colors ${date === selectedDate ? 'border-accent-3 bg-accent-3/20' : 'border-line bg-hover hover:border-accent-3/50'}`}
               onClick={() => setSelectedDate(date)} aria-pressed={date === selectedDate}>
-              <span className="day-name">
+              <span className="font-semibold">
                 {new Date(date + 'T00:00:00').toLocaleDateString('en', { weekday: 'short' })}
               </span>
-              <span className="day-num">
+              <span className="text-xs text-muted">
                 {new Date(date + 'T00:00:00').getDate()}
               </span>
-              {activeDates.has(date) && <span role="img" className="day-dot" aria-label="has workouts" />}
+              {activeDates.has(date) && <span role="img" className="block h-1.5 w-1.5 rounded-full bg-accent" aria-label="has workouts" />}
             </button>
           ))}
         </div>
 
         {weeklyVolume.length === 0 && (
-          <p className="analytics-empty">Log a workout to see your week summary and personal records here.</p>
+          <p className="pt-5 pb-2 text-center text-sm text-muted">Log a workout to see your week summary and personal records here.</p>
         )}
 
         {weeklyVolume.length > 0 && (
-          <div className="analytics">
-            <h3 className="analytics-heading">Week summary</h3>
-            <div className="analytics-grid">
+          <div className={`${PANEL} mb-5`}>
+            <h3 className={PANEL_HEADING}>Week summary</h3>
+            <div className={STAT_GRID}>
               {weeklyVolume.map(v => {
                 const rec = weeklyRecords.find(r => r.exerciseId === v.exerciseId);
                 return (
-                  <div key={v.exerciseId} className="analytics-card">
-                    <div className="analytics-name">{getExerciseName(v.exerciseId)}</div>
-                    <div className="analytics-stat">{v.totalReps} {getExerciseUnit(v.exerciseId)}</div>
-                    <div className="analytics-sub">{v.totalSets} {v.totalSets === 1 ? 'set' : 'sets'}</div>
+                  <div key={v.exerciseId} className={STAT_CARD}>
+                    <div className={STAT_NAME}>{getExerciseName(v.exerciseId)}</div>
+                    <div className="mb-0.5 text-xl leading-none font-bold text-accent">{v.totalReps} {getExerciseUnit(v.exerciseId)}</div>
+                    <div className={STAT_SUB}>{v.totalSets} {v.totalSets === 1 ? 'set' : 'sets'}</div>
                     {rec?.maxWeight !== null && rec?.maxWeight !== undefined && (
-                      <div className="analytics-sub">max {rec.maxWeight} {weightUnit}</div>
+                      <div className={STAT_SUB}>max {rec.maxWeight} {weightUnit}</div>
                     )}
                   </div>
                 );
@@ -392,22 +399,22 @@ const App: React.FC = () => {
         )}
 
         {allTimeRecords.length > 0 && (
-          <div className="analytics records-panel">
-            <h3 className="analytics-heading">Personal records</h3>
-            <div className="analytics-grid">
+          <div className={`${PANEL} mb-5`}>
+            <h3 className={PANEL_HEADING}>Personal records</h3>
+            <div className={STAT_GRID}>
               {allTimeRecords.map(rec => {
                 const weekRec = weeklyRecords.find(r => r.exerciseId === rec.exerciseId);
                 const newRepsRecord = weekRec !== undefined && weekRec.maxReps >= rec.maxReps;
                 const newWeightRecord = rec.maxWeight !== null && weekRec?.maxWeight !== undefined &&
                   weekRec.maxWeight !== null && weekRec.maxWeight >= rec.maxWeight;
                 return (
-                  <div key={rec.exerciseId} className="analytics-card">
-                    <div className="analytics-name">{getExerciseName(rec.exerciseId)}</div>
-                    <div className={`analytics-stat${newRepsRecord ? ' analytics-stat--record' : ''}`}>
+                  <div key={rec.exerciseId} className={STAT_CARD}>
+                    <div className={STAT_NAME}>{getExerciseName(rec.exerciseId)}</div>
+                    <div className={`mb-0.5 text-xl leading-none font-bold ${newRepsRecord ? 'text-warning' : 'text-accent'}`}>
                       {rec.maxReps} {getExerciseUnit(rec.exerciseId)}
                     </div>
                     {rec.maxWeight !== null && (
-                      <div className={`analytics-sub${newWeightRecord ? ' analytics-sub--record' : ''}`}>
+                      <div className={newWeightRecord ? STAT_SUB_RECORD : STAT_SUB}>
                         max {rec.maxWeight} {weightUnit}
                       </div>
                     )}
@@ -418,20 +425,20 @@ const App: React.FC = () => {
           </div>
         )}
 
-        <h2 className="day-heading">{selectedDateLabel}</h2>
+        <h2 className={`${H2} mt-1`}>{selectedDateLabel}</h2>
         {historyWorkout && historyWorkout.exercises.length > 0 ? (
           historyWorkout.exercises.map((entry, i) => (
-            <div key={i} className="exercise-item">
+            <div key={i} className="border-b border-line py-2.5 last:border-b-0">
               <strong>{getExerciseName(entry.exercise_id)}</strong>
               {entry.sets.map((set, j) => (
-                <div key={j} className="set-item">
+                <div key={j} className="ml-5 py-0.5 text-sm text-muted">
                   Set {j + 1}: {set.reps} {getExerciseUnit(entry.exercise_id)}{set.weight != null ? ` @ ${set.weight} ${weightUnit}` : ''}
                 </div>
               ))}
             </div>
           ))
         ) : (
-          <p>No workouts logged this day.</p>
+          <p className="text-muted">No workouts logged this day.</p>
         )}
       </div>
     </div>

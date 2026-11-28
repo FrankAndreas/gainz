@@ -34,3 +34,4 @@ Thumbs.db
 
 # Lock files created by filelock
 *.lock
+frontend/public/theme-init.js
