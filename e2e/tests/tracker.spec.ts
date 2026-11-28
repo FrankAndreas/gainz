@@ -52,3 +52,31 @@ test('the log button waits for a set, and an error is shown', async ({ page, req
     await page.getByRole('button', { name: 'Log Workout' }).click();
     await expect(page.getByText(/fail|error|could not/i).first()).toBeVisible();
 });
+
+// The weight and its unit share a row: the number field keeps most of it, the unit select only what it needs
+test('the weight field keeps its width next to the unit', async ({ page, request }) => {
+    await login(page, request);
+    const weight = await page.getByLabel('Weight (optional):').boundingBox();
+    const unit = await page.getByLabel('Weight unit').boundingBox();
+    expect(weight!.width).toBeGreaterThan(unit!.width);
+    expect(unit!.width).toBeLessThan(120);
+    // Nothing wider than the screen (phone)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+// A personal record set this week stands out from the other figures (gold, not the muted grey)
+test('a weight record this week is highlighted', async ({ page, request }) => {
+    await login(page, request);
+    await page.getByLabel('Exercise:').selectOption({ label: 'Push-ups' });
+    await page.getByLabel('Reps:').fill('3');
+    await page.getByLabel('Weight (optional):').fill('999');
+    await page.getByRole('button', { name: 'Add Set' }).click();
+    await page.getByRole('button', { name: 'Log Workout' }).click();
+    // In the records panel (the week summary shows the same figure, muted on purpose); the panels load one after
+    // the other, so the colour is asked again until it holds
+    const records = page.locator('div').filter({ has: page.getByRole('heading', { name: 'Personal records', exact: true }) }).last();
+    const record = records.getByText('max 999 kg');
+    await expect(record).toBeVisible();
+    const muted = await page.getByText(/^\d+ sets?$/).first().evaluate(e => getComputedStyle(e).color);
+    await expect.poll(() => record.evaluate(e => getComputedStyle(e).color)).not.toBe(muted);
+});
