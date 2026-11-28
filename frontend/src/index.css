@@ -6,6 +6,15 @@
 @source not "../scripts";
 
 @layer base {
+  /* Buttons show they can be clicked (Tailwind's base styles leave the cursor alone), a disabled one doesn't */
+  button:not(:disabled) {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+  }
+
   /* A select's open list in the page's colour (some browsers draw it light otherwise) */
   select option {
     background: var(--fh-page);

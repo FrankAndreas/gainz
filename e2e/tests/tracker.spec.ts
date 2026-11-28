@@ -80,3 +80,13 @@ test('a weight record this week is highlighted', async ({ page, request }) => {
     const muted = await page.getByText(/^\d+ sets?$/).first().evaluate(e => getComputedStyle(e).color);
     await expect.poll(() => record.evaluate(e => getComputedStyle(e).color)).not.toBe(muted);
 });
+
+// Buttons show they can be clicked (Tailwind's base styles leave the cursor to the page), a disabled one doesn't
+test('buttons have the hand cursor, a disabled one not', async ({ page, request }) => {
+    await login(page, request);
+    const cursor = (name: string) => page.getByRole('button', { name, exact: true }).evaluate(e => getComputedStyle(e).cursor);
+    expect(await cursor('Add Set')).toBe('pointer');
+    expect(await cursor('Previous week')).toBe('pointer');
+    expect(await cursor('Sign out')).toBe('pointer');
+    expect(await cursor('Next week')).not.toBe('pointer');
+});
