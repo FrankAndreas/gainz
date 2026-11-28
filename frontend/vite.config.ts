@@ -1,9 +1,10 @@
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   // Same port as under react-scripts, so the devcontainer and compose file still fit
   // /api goes to the backend, as nginx does on the NAS (which also strips the prefix), so the hub cookie is the page's own
   server: {

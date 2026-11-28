@@ -1,3 +1,9 @@
+/* Tailwind v4 and the family look by role (family-hub-theme): body, .glass-card, .btn-primary, bg-surface, ... */
+@import "tailwindcss";
+@import "family-hub-theme/theme.css";
+/* The palette-colour checker's examples aren't classes of this app */
+@source not "../scripts";
+
 /* Aurora theme, shared with the other family apps (family-budget-dashboard, family-job-tracking) */
 :root {
   /* Backgrounds */

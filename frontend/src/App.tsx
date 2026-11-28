@@ -1,3 +1,4 @@
+import { applyTheme } from 'family-hub-theme';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import axios from 'axios';
 import {
@@ -88,6 +89,8 @@ const App: React.FC = () => {
   }, []);
 
   const handleLogout = () => {
+    // The hub's login page comes next: the default look there, not this person's
+    applyTheme(null);
     if (links) goTo(`${links.logout_url}?next=${encodeURIComponent(window.location.origin)}`);
   };
 
@@ -103,6 +106,8 @@ const App: React.FC = () => {
       return true;
     }
     if (code === 'no_access' || code === 'hub_unavailable') {
+      // Nobody logged in here: the default look
+      applyTheme(null);
       setStatus(code);
       return true;
     }
@@ -123,6 +128,7 @@ const App: React.FC = () => {
         const [{ me: person, renew }, exerciseList] = await Promise.all([fetchMe(), fetchExercises()]);
         if (!current) return;
         setMe(person);
+        applyTheme(person.theme);
         setExercises(exerciseList);
         setStatus('ready');
         // The hub login is in its last week: once through the hub, which renews it and sends the browser back

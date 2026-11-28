@@ -25,6 +25,8 @@ export function errorCode(err: unknown): ErrorCode | null {
 export interface Me {
   id: string;
   name: string;
+  // Their look from the family hub (family-hub-theme)
+  theme: string;
 }
 
 export interface Exercise {

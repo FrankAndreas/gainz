@@ -58,7 +58,8 @@ export default defineConfig({
             timeout: 60_000,
         },
         {
-            command: 'npx vite --port 3100 --strictPort',
+            // theme:copy as predev does: the page loads /theme-init.js first
+            command: 'npm run theme:copy && npx vite --port 3100 --strictPort',
             cwd: path.resolve(__dirname, '..', 'frontend'),
             url: FRONTEND,
             // Vite forwards /api to the test backend, so the hub's cookie is the page's own (as with nginx)
