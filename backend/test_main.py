@@ -408,3 +408,18 @@ class TestErrorHandling:
                 headers=auth_headers(),
             )
         assert r.status_code == 500
+
+
+def test_data_dir_from_the_environment(monkeypatch, tmp_path):
+    """The browser tests run a backend with a data folder of their own, never backend/data (real workouts)."""
+    import importlib
+
+    from backend import storage
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    try:
+        assert importlib.reload(storage).DATA_DIR == tmp_path
+    finally:
+        monkeypatch.delenv("DATA_DIR")
+        importlib.reload(storage)
+    assert storage.DATA_DIR.name == "data"

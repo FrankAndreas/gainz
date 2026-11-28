@@ -31,6 +31,8 @@ class Person:
 
     id: str
     name: str
+    # Their look in the family hub (family-hub-theme), fresh from the session; the page falls back for an unknown one
+    theme: str = "aurora"
 
 
 def api_error(status_code: int, code: str) -> HTTPException:
@@ -87,7 +89,7 @@ def get_current_person(request: Request, response: Response) -> Person:
     if session.renew:
         # The hub login is in its last week: the page sends the browser once through the hub, which renews it
         response.headers[RENEW_HEADER] = "1"
-    return Person(id=found["id"], name=found["name"])
+    return Person(id=found["id"], name=found["name"], theme=session.person.theme)
 
 
 # The logged-in person, as an endpoint parameter: `person: CurrentPerson`

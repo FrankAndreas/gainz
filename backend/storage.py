@@ -7,8 +7,9 @@ from pathlib import Path
 
 from filelock import FileLock
 
-# Read where used (storage.DATA_DIR), so tests can point it at a folder of their own
-DATA_DIR = Path(__file__).parent / "data"
+# Read where used (storage.DATA_DIR), so tests can point it at a folder of their own; the browser tests' backend sets
+# DATA_DIR, so it never touches backend/data (real workouts)
+DATA_DIR = Path(os.environ.get("DATA_DIR") or Path(__file__).parent / "data")
 
 
 def users_path() -> Path:
